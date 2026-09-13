@@ -2109,6 +2109,14 @@ body:has(.certification-ysws) {
           transform: translateY(-2px);
           box-shadow: 0 4px 16px rgba(129, 255, 255, 0.4);
         }
+
+        // Armed by the first ctrl+enter: a pulsing ring says "press ctrl+enter
+        // again to confirm" before the second press completes the review.
+        &.btn-complete--armed {
+          outline: 3px solid var(--color-brand-off-white);
+          outline-offset: 2px;
+          animation: ysws-complete-arm-pulse 0.7s ease-in-out infinite;
+        }
       }
     }
   }
@@ -3109,5 +3117,76 @@ body:has(.certification-ysws) {
   &__loading {
     color: rgba(255, 255, 255, 0.6);
     font-style: italic;
+  }
+}
+
+// Keyboard-shortcut affordances (:ysws_review_shortcuts). The controller injects
+// <kbd class="kbd-hint"> badges onto the controls each key drives and pins a
+// fixed legend for the navigation keys — both exist only while the flag is on.
+// Top-level (not nested under .certification-ysws) because the legend mounts on
+// <body>.
+.kbd-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: var(--space-xxs);
+  padding: 0 0.35rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  // Inherit the host control's text colour so the badge stays legible on any
+  // surface — dark panels, the mint approve button, the salmon reject button —
+  // and read as a subtle hint rather than a filled chip.
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.ysws-kbd-legend {
+  position: fixed;
+  // Pinned top-RIGHT, clear of the Complete/checklist actions-card that floats
+  // bottom-right.
+  right: var(--space-m);
+  top: var(--space-m);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  padding: var(--space-xs) var(--space-s);
+  border: 1px solid var(--color-space-border);
+  border-radius: 999px;
+  background: var(--color-set-2-bg);
+  color: var(--color-space-text-muted);
+  font-size: var(--font-size-xs);
+  box-shadow: 0 4px 16px hsl(245 55% 4% / 0.5);
+
+  &__title {
+    color: var(--color-brand-mint);
+    font-weight: 700;
+  }
+
+  &__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+  }
+}
+
+// Pulse for the Complete Review button while it's armed for its confirming
+// second ctrl+enter press (certification--ysws--keyboard-shortcuts).
+@keyframes ysws-complete-arm-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 252, 244, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 12px 4px rgba(255, 252, 244, 0.35);
   }
 }
