@@ -453,6 +453,8 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
   def integrity_check_on(project)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: @subject, postable: ship_event)
+    Certification::Ysws.create!(user: @subject, project: project, post_ship_event: ship_event,
+                                original_minutes: 60, reviewed_at: Time.current)
     Certification::Integrity.create!(ship_event: ship_event, status: :pending)
   end
 
@@ -461,6 +463,8 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
     Project::Membership.create!(project: project, user: @subject, role: :owner)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: @subject, postable: ship_event)
+    Certification::Ysws.create!(user: @subject, project: project, post_ship_event: ship_event,
+                                original_minutes: 60, reviewed_at: Time.current)
     Certification::Integrity.create!(ship_event: ship_event, status: :pending)
   end
 end

@@ -72,25 +72,6 @@
     }
   }
 
-  // Checkbox filters read as a single row rather than the stacked
-  // label-over-control layout the dropdown filters use.
-  & &__filter--toggle {
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-xs);
-  }
-
-  & &__checkbox {
-    accent-color: var(--color-brand-highlight);
-    width: 1rem;
-    height: 1rem;
-
-    &:focus-visible {
-      outline: 2px solid var(--color-brand-highlight);
-      outline-offset: 2px;
-    }
-  }
-
   & &__filter--search {
     flex: 1 1 48rem;
     min-width: 0;

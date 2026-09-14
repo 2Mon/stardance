@@ -82,8 +82,10 @@ module Admin
                    .select("shop_orders.user_id AS user_id, shop_orders.created_at AS created_at")
       end
 
+      # Held back until the GOI has reviewed the ship, so a deduction is weighed
+      # against the hours the GOI approved rather than the raw claim.
       def self.integrity_checks
-        ::Certification::Integrity.pending
+        ::Certification::Integrity.pending.past_goi
           .joins("INNER JOIN posts ON posts.postable_id = certification_integrities.ship_event_id AND posts.postable_type = 'Post::ShipEvent'")
           .select("posts.user_id AS user_id, certification_integrities.created_at AS created_at")
       end
@@ -129,7 +131,7 @@ module Admin
       end
 
       def self.integrity_checks_for(user)
-        ::Certification::Integrity.pending
+        ::Certification::Integrity.pending.past_goi
           .joins(ship_event: :post)
           .where(posts: { user_id: user.id })
           .includes(ship_event: [ { post: :project }, { ysws_review: :devlog_reviews } ])

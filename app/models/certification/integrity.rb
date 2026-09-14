@@ -47,6 +47,16 @@ module Certification
 
     delegate :project, to: :ship_event
 
+    # Checks on a ship the GOI has finished reviewing. A returned YSWS review is
+    # replaced by a fresh one on the same ship, so any completed review counts.
+    scope :past_goi, -> {
+      where(
+        Certification::Ysws.where("certification_ysws_reviews.post_ship_event_id = certification_integrities.ship_event_id")
+                           .where.not(reviewed_at: nil)
+                           .arel.exists
+      )
+    }
+
     # The project, including soft-deleted ones: banning a user soft-deletes their
     # projects, and Post::ShipEvent#project is a has_one :through that applies
     # Project's not_deleted default scope — so the plain delegate goes nil exactly

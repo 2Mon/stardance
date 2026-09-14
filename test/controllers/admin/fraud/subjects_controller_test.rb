@@ -50,6 +50,18 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", admin_fraud_subject_path(@subject)
   end
 
+  test "a check still waiting on the GOI stays off the subject page" do
+    flag_the_project
+    pending_integrity_check(@project)
+    pending_integrity_check(@project, goi_completed: false)
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__progress-slot--integrity", count: 1
+  end
+
   test "the progress bar gives each waiting item one slot" do
     flag_the_project
     pending_integrity_check(@project)
@@ -329,12 +341,12 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
 
   private
 
+  # Fills in the GOI review pending_integrity_check already created, since a
+  # ship has only one and a second would leave ysws_review ambiguous.
   def goi_review_on(check, claimed:, approved:)
     project = check.ship_event.post.project
-    review = Certification::Ysws.create!(
-      user: @subject, project: project, post_ship_event: check.ship_event,
-      original_minutes: claimed, reviewer: @admin || @squad, reviewed_at: 2.days.ago
-    )
+    review = check.ship_event.ysws_review
+    review.update!(original_minutes: claimed, reviewer: @admin || @squad, reviewed_at: 2.days.ago)
 
     devlog = Post::Devlog.new(body: "Devlog", duration_seconds: claimed * 60)
     devlog.uploading_attachments = true
@@ -347,11 +359,13 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     review
   end
 
-  def pending_integrity_check(project)
+  def pending_integrity_check(project, goi_completed: true)
     Project::Membership.create!(project: project, user: @subject, role: :owner) unless
       Project::Membership.exists?(project: project, user: @subject)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: @subject, postable: ship_event)
+    Certification::Ysws.create!(user: @subject, project: project, post_ship_event: ship_event,
+                                original_minutes: 60, reviewed_at: (Time.current if goi_completed))
     Certification::Integrity.create!(ship_event: ship_event, status: :pending)
   end
 
