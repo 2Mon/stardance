@@ -9,7 +9,7 @@ module Admin
       @actor = actor
       @reason = reason.presence || "No reason provided"
       fraud_reviewer = actor.admin? || actor.fraud_dept?
-      @internal_reason = fraud_reviewer ? internal_reason.presence : @reason
+      @internal_reason = internal_reason.presence || @reason
       @joe_case_url = fraud_reviewer ? joe_case_url.presence : nil
       @fraud_project_id = fraud_reviewer ? fraud_project_id.presence : 1
     end

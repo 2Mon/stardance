@@ -1,4 +1,8 @@
-<% show_fraud_fields = (current_user.admin? || current_user.fraud_dept?) && params[:return_view] != "fulfillment" %>
+<%# Fraud-specific paperwork (a related project, a Telescreen case) is only
+    ever asked of fraud dept — everyone else who may reject (an admin clearing
+    an order after it already passed fraud review, or a fulfillment person)
+    still leaves a staff-only internal reason, just not a fraud case file. %>
+<% show_fraud_fields = current_user.fraud_dept? %>
 <dialog id="reject-modal">
   <h2>Reject Order #<%= order.id %></h2>
 
@@ -11,12 +15,12 @@
       <%= f.text_area :reason, placeholder: "Enter reason for rejection...", rows: 3 %>
     </div>
 
-    <% if show_fraud_fields %>
-      <div>
-        <%= f.label :internal_rejection_reason, "Internal Reason (required, staff only)" %>
-        <%= f.text_area :internal_rejection_reason, placeholder: "Detailed internal reason for this rejection...", rows: 3, required: true %>
-      </div>
+    <div>
+      <%= f.label :internal_rejection_reason, "Internal Reason (required, staff only)" %>
+      <%= f.text_area :internal_rejection_reason, placeholder: "Detailed internal reason for this rejection...", rows: 3, required: true %>
+    </div>
 
+    <% if show_fraud_fields %>
       <div>
         <%= f.label :fraud_related_project_id, "Related Project ID (required)" %>
         <%= f.number_field :fraud_related_project_id, placeholder: "e.g. 1234", required: true %>

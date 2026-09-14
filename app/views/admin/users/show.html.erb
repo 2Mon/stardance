@@ -263,14 +263,16 @@
                 <%= label_tag :internal_rejection_reason, "Internal Reason (required, staff only)" %>
                 <%= text_area_tag :internal_rejection_reason, "", placeholder: "Detailed internal reason for these rejections...", required: true %>
               </div>
-              <div>
-                <%= label_tag :fraud_related_project_id, "Related Project ID (required)" %>
-                <%= number_field_tag :fraud_related_project_id, nil, placeholder: "e.g. 1234", required: true, autocomplete: "off" %>
-              </div>
-              <div>
-                <%= label_tag :joe_case_url, "Telescreen case URL (optional)" %>
-                <%= url_field_tag :joe_case_url, nil, placeholder: "https://telescreen.hackclub.com/cases/...", autocomplete: "off" %>
-              </div>
+              <% if current_user.fraud_dept? %>
+                <div>
+                  <%= label_tag :fraud_related_project_id, "Related Project ID (required)" %>
+                  <%= number_field_tag :fraud_related_project_id, nil, placeholder: "e.g. 1234", required: true, autocomplete: "off" %>
+                </div>
+                <div>
+                  <%= label_tag :joe_case_url, "Telescreen case URL (optional)" %>
+                  <%= url_field_tag :joe_case_url, nil, placeholder: "https://telescreen.hackclub.com/cases/...", autocomplete: "off" %>
+                </div>
+              <% end %>
               <div>
                 <button type="submit">Confirm Reject</button>
                 <button type="button" onclick="document.getElementById('reject-modal-orders').close()">Cancel</button>
