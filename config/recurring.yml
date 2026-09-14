@@ -176,6 +176,11 @@ production:
     concurrency: 1
     description: "Destroy MAC analyses flagged insufficient_data older than 3 days so they re-enter the pending queue"
 
+  certification_fraud_integrity_backfill:
+    class: OneTime::BackfillFraudIntegrityJob
+    schedule: every day at 5am America/New_York
+    description: "Run fraud auto-detection on ships that have a YSWS review but no integrity check yet"
+
   certification_ysws_airtable_resync:
     class: Certification::YswsAirtableResyncJob
     schedule: every day at 4pm America/New_York
