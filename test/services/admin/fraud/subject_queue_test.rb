@@ -108,6 +108,37 @@ class Admin::Fraud::SubjectQueueTest < ActiveSupport::TestCase
                  Admin::Fraud::SubjectQueue.next_subject_id(reviewer: reviewer, after: finished)
   end
 
+  test "an integrity check waits for the GOI to finish reviewing the ship" do
+    waiting = create_user(slack_id: "u-goi-waiting", display_name: "goiwaiting")
+    pending_integrity_for(waiting, age: 20.days.ago, goi: :pending)
+    returned = create_user(slack_id: "u-goi-returned", display_name: "goireturned")
+    pending_integrity_for(returned, age: 20.days.ago, goi: :returned)
+    unreviewed = create_user(slack_id: "u-goi-none", display_name: "goinone")
+    pending_integrity_for(unreviewed, age: 20.days.ago, goi: :none)
+    ready = user_with_integrity(age: 5.days.ago)
+
+    assert_equal [ ready.id ], ranked_ids
+    assert_empty Admin::Fraud::SubjectQueue.integrity_checks_for(waiting)
+    assert_empty Admin::Fraud::SubjectQueue.integrity_checks_for(returned)
+  end
+
+  test "a returned GOI review replaced by a completed one lets the check through" do
+    user = create_user(slack_id: "u-goi-redo", display_name: "goiredo")
+    check = pending_integrity_for(user, age: 3.days.ago, goi: :returned)
+    goi_review_for(check.ship_event, user: user, project: check.ship_event.post.project, state: :completed)
+
+    assert_equal [ user.id ], ranked_ids
+    assert_equal [ check ], Admin::Fraud::SubjectQueue.integrity_checks_for(user).to_a
+  end
+
+  test "someone waiting only on the GOI still shows for their other items" do
+    user = user_with_flag(age: 2.days.ago)
+    pending_integrity_for(user, age: 30.days.ago, goi: :pending)
+
+    subject = subjects.find { |row| row.user_id == user.id }
+    assert_equal [ 1, 0 ], [ subject.flag_count, subject.integrity_count ]
+  end
+
   private
 
   def subjects = Admin::Fraud::SubjectQueue.subjects
@@ -150,14 +181,25 @@ class Admin::Fraud::SubjectQueueTest < ActiveSupport::TestCase
     user
   end
 
-  def pending_integrity_for(user, age:, status: :pending)
+  def pending_integrity_for(user, age:, status: :pending, goi: :completed)
     project = Project.create!(title: "Shipped #{SecureRandom.hex(4)}")
     Project::Membership.create!(project: project, user: user, role: :owner)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: user, postable: ship_event)
+    goi_review_for(ship_event, user: user, project: project, state: goi)
     check = Certification::Integrity.create!(ship_event: ship_event, status: status)
     check.update_column(:created_at, age)
     check
+  end
+
+  def goi_review_for(ship_event, user:, project:, state:)
+    return if state == :none
+
+    Certification::Ysws.create!(
+      user: user, project: project, post_ship_event: ship_event, original_minutes: 60,
+      reviewed_at: (Time.current if state == :completed),
+      returned_at: (Time.current if state == :returned)
+    )
   end
 
   def shop_item

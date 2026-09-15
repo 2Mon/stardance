@@ -17,15 +17,6 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
         filters.delete("project_type")
       end
     end
-    # Only the opt-out is worth persisting — an absent key means the default
-    # "integrity checks only" view.
-    if params.key?(:with_integrity)
-      if params[:with_integrity] == "0"
-        filters["with_integrity"] = "0"
-      else
-        filters.delete("with_integrity")
-      end
-    end
     if params.key?(:sort)
       sort = params[:sort].presence_in(%w[length todo])
       if sort
@@ -38,15 +29,15 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
     end
     session[FILTER_SESSION_KEY] = filters
 
-    @project_type   = filters["project_type"].presence
-    @sort           = filters["sort"].presence_in(%w[length todo])
-    @dir            = filters["dir"] == "asc" ? "asc" : "desc"
-    @with_integrity = filters["with_integrity"] != "0"
+    @project_type = filters["project_type"].presence
+    @sort         = filters["sort"].presence_in(%w[length todo])
+    @dir          = filters["dir"] == "asc" ? "asc" : "desc"
 
     @search = params[:search].to_s.strip
 
+    # Every pending review, whatever its integrity state: the GOI goes first, and
+    # integrity waits on it (Certification::Integrity.past_goi).
     queue = ::Certification::Ysws.pending.unclaimed_or_claimed_by(current_user)
-    queue = queue.with_integrity_check if @with_integrity
 
     software_counts = queue.joins(:project).where(projects: { hardware_stage: nil }).group("projects.project_type").count
     hardware_count = queue.joins(:project).where.not(projects: { hardware_stage: nil }).count
@@ -251,12 +242,11 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
   end
 
   def ysws_review_filters
-    session[FILTER_SESSION_KEY].to_h.slice("project_type", "sort", "dir", "with_integrity")
+    session[FILTER_SESSION_KEY].to_h.slice("project_type", "sort", "dir")
   end
 
   def ysws_review_filter_params?
-    params.key?(:project_type) || params.key?(:sort) || params.key?(:dir) ||
-      params.key?(:with_integrity)
+    params.key?(:project_type) || params.key?(:sort) || params.key?(:dir)
   end
 
 
@@ -405,7 +395,7 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
 
     render json: {
       success: true,
-      message: "Review completed! Syncing to Airtable in the background...",
+      message: "Review completed! It syncs to Airtable once integrity has signed off.",
       redirect_url: admin_certification_ysws_reviews_path
     }, status: :ok
   rescue StandardError => e

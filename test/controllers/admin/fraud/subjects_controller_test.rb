@@ -24,6 +24,7 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "a[href=?]", admin_fraud_subject_path(@subject)
     assert_select ".fraud-subject-card__avatar[src=?]", @subject.avatar
+    assert_select ".fraud-queue__header input.fraud-queue__speedrun-input[role=switch]"
   end
 
   test "the queue leaves out someone another reviewer is holding" do
@@ -48,6 +49,18 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "a[href=?]", admin_fraud_subject_path(@subject)
+  end
+
+  test "a check still waiting on the GOI stays off the subject page" do
+    flag_the_project
+    pending_integrity_check(@project)
+    pending_integrity_check(@project, goi_completed: false)
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__progress-slot--integrity", count: 1
   end
 
   test "the progress bar gives each waiting item one slot" do
@@ -100,7 +113,7 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     get admin_fraud_subject_path(@subject)
 
     assert_response :success
-    assert_select "a.fraud-subject__next-button[href=?]", admin_fraud_subject_path(other)
+    assert_select "a.fraud-subject__next-button[href=?][data-fraud-speedrun-target=next]", admin_fraud_subject_path(other)
   end
 
   test "a person still waiting on a verdict gets no next button" do
@@ -158,6 +171,22 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_match "No Hackatime identity", response.body
+  end
+
+  test "the subject page links Hackatime projects without calling Hackatime" do
+    flag_the_project
+    @subject.identities.create!(provider: "hackatime", uid: "4242", access_token: "t")
+    User::HackatimeProject.insert_all([
+      { user_id: @subject.id, project_id: @project.id, name: "orbit-os", created_at: Time.current, updated_at: Time.current }
+    ])
+
+    sign_in @squad
+    HackatimeService.stub(:fetch_stats, ->(*, **) { flunk "the subject page must not call Hackatime" }) do
+      get admin_fraud_subject_path(@subject)
+    end
+
+    assert_response :success
+    assert_select ".fraud-subject__tools a[href=?]", telescreen_hackatime_overview_url("4242", project: "orbit-os")
   end
 
   test "the dashboard count badge reports how many people are waiting" do
@@ -245,6 +274,22 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
                   telescreen_hackatime_overview_url("4242", project: [ "orbit-os", "orbit os v2" ])
   end
 
+  test "a Hackatime project on a deleted Stardance project gets no Telescreen link" do
+    flag_the_project
+    deleted = Project.create!(title: "Gone build")
+    @subject.identities.create!(provider: "hackatime", uid: "4242", access_token: "t")
+    User::HackatimeProject.insert_all([
+      { user_id: @subject.id, project_id: deleted.id, name: "gone-key", created_at: Time.current, updated_at: Time.current }
+    ])
+    deleted.soft_delete!
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_no_match "Gone build", response.body
+  end
+
   test "a single Hackatime project gets no all-projects link" do
     project = Project.create!(title: "Shipped build")
     pending_integrity_check(project)
@@ -329,12 +374,12 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
 
   private
 
+  # Fills in the GOI review pending_integrity_check already created, since a
+  # ship has only one and a second would leave ysws_review ambiguous.
   def goi_review_on(check, claimed:, approved:)
     project = check.ship_event.post.project
-    review = Certification::Ysws.create!(
-      user: @subject, project: project, post_ship_event: check.ship_event,
-      original_minutes: claimed, reviewer: @admin || @squad, reviewed_at: 2.days.ago
-    )
+    review = check.ship_event.ysws_review
+    review.update!(original_minutes: claimed, reviewer: @admin || @squad, reviewed_at: 2.days.ago)
 
     devlog = Post::Devlog.new(body: "Devlog", duration_seconds: claimed * 60)
     devlog.uploading_attachments = true
@@ -347,11 +392,13 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     review
   end
 
-  def pending_integrity_check(project)
+  def pending_integrity_check(project, goi_completed: true)
     Project::Membership.create!(project: project, user: @subject, role: :owner) unless
       Project::Membership.exists?(project: project, user: @subject)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: @subject, postable: ship_event)
+    Certification::Ysws.create!(user: @subject, project: project, post_ship_event: ship_event,
+                                original_minutes: 60, reviewed_at: (Time.current if goi_completed))
     Certification::Integrity.create!(ship_event: ship_event, status: :pending)
   end
 

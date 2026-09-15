@@ -4,7 +4,7 @@
       <% if next_subject_id %>
         <%# _top so the link navigates the page rather than this frame. %>
         <%= link_to admin_fraud_subject_path(next_subject_id), class: "fraud-subject__next-button",
-                    data: { turbo_frame: "_top" } do %>
+                    data: { turbo_frame: "_top", fraud_speedrun_target: "next" } do %>
           Next person <span aria-hidden="true">&rarr;</span>
         <% end %>
       <% else %>

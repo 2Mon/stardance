@@ -197,8 +197,8 @@
           all_roles = User::Role.all_slugs.reject { |slug| slug == :super_admin }.map do |slug|
             { name: slug.to_s, disabled: slug == :admin ? !current_user&.super_admin? : !current_user&.admin? }
           end
-          promotable_roles = all_roles.reject { |r| @user.has_role?(r[:name]) }
-          demotable_roles = all_roles.select { |r| @user.has_role?(r[:name]) }
+          promotable_roles = all_roles.reject { |r| @user.roles.include?(r[:name].to_sym) }
+          demotable_roles = all_roles.select { |r| @user.roles.include?(r[:name].to_sym) }
         %>
         <% if promotable_roles.any? %>
           <div class="role-dropdown">

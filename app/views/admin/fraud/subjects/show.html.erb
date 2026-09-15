@@ -1,6 +1,7 @@
 <% content_for :title, "Fraud review: #{@user.display_name}" %>
 
-<main class="<%= class_names("fraud-subject", "fraud-subject--claimed-elsewhere" => @blocking_claim) %>" role="main">
+<main class="<%= class_names("fraud-subject", "fraud-subject--claimed-elsewhere" => @blocking_claim) %>" role="main"
+      data-controller="fraud-speedrun">
   <%= render "progress", review_items: @review_items, payout: @open_payout %>
 
   <%= render "celebration", payout: nil, total: 0 %>
@@ -16,7 +17,7 @@
 
   <%= render "identity", user: @user %>
 
-  <%= render "counts", user: @user %>
+  <%= render "counts", user: @user, flags: @flags, orders: @orders, checks: @integrity_checks %>
 
   <%= render "telescreen_tools" %>
 
@@ -37,7 +38,7 @@
   <section class="fraud-subject__section" aria-labelledby="fraud-subject-orders">
     <h2 class="fraud-subject__section-title" id="fraud-subject-orders">Shop orders</h2>
 
-    <%= render "order_bulk_actions", user: @user %>
+    <%= render "order_bulk_actions", user: @user, orders: @orders %>
 
     <% if @orders.any? %>
       <div class="fraud-subject__items">
@@ -49,7 +50,7 @@
   </section>
 
   <section class="fraud-subject__section" aria-labelledby="fraud-subject-integrity">
-    <%= render "integrity_items", user: @user %>
+    <%= render "integrity_items", user: @user, checks: @integrity_checks %>
   </section>
 
   <%= render "approved_orders", approved_orders: @approved_orders,

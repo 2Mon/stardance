@@ -11,14 +11,6 @@
         </span>
         <span class="ysws-queue__summary-count"><%= @reviews.size %></span>
       </div>
-
-      <div class="ysws-queue__filter ysws-queue__filter--toggle">
-        <%= hidden_field_tag :with_integrity, "0", id: nil, form: "ysws-queue-filters" %>
-        <%= check_box_tag :with_integrity, "1", @with_integrity, id: "filter-with-integrity",
-              class: "ysws-queue__checkbox", form: "ysws-queue-filters",
-              onchange: "this.form.requestSubmit()" %>
-        <label for="filter-with-integrity">Only with certification integrity</label>
-      </div>
     </div>
 
     <%
@@ -134,8 +126,7 @@
           queue is empty — so an emptied-out filter needs its own way back. %>
       <% if @project_type.present? %>
         <%= link_to "Show all types",
-                    admin_certification_ysws_reviews_path(project_type: "", sort: @sort, dir: @dir,
-                                                          with_integrity: @with_integrity ? nil : "0") %>
+                    admin_certification_ysws_reviews_path(project_type: "", sort: @sort, dir: @dir) %>
       <% end %>
     </div>
   <% end %>

@@ -1,7 +1,7 @@
 <%# Framed and self-sufficient so a verdict can swap it: once the orders it
     offers are settled, the buttons must stop offering them. %>
 <%= turbo_frame_tag "fraud-subject-order-bulk-actions" do %>
-  <% orders = Admin::Fraud::SubjectQueue.orders_for(user) %>
+  <% orders = local_assigns.fetch(:orders) { Admin::Fraud::SubjectQueue.orders_for(user) } %>
   <% approvable_orders = orders.select(&:approvable?) %>
 
   <% if orders.any? %>
@@ -36,7 +36,7 @@
 
               <%= f.label :fraud_related_project_id, "Related project", class: "fraud-subject__field-label" %>
               <%= f.select :fraud_related_project_id,
-                           user.projects.with_deleted.distinct.order(created_at: :desc).map { |project| [ project.title, project.id ] },
+                           fraud_related_project_options(user),
                            { include_blank: "Pick a project" },
                            required: true, class: "fraud-subject__field" %>
             <% end %>

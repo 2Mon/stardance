@@ -103,14 +103,6 @@ module Certification
       select("certification_ysws_reviews.*", "#{TODO_DEVLOG_COUNT_SQL} AS todo_devlog_count")
     }
 
-    # Reviews whose ship event already carries a decided integrity check, or
-    # whose project is hardware (hardware projects skip integrity checks).
-    scope :with_integrity_check, -> {
-      hardware = joins(:project).where.not(projects: { hardware_stage: nil })
-      decided  = joins(:integrity_check).where.not(certification_integrities: { status: :pending })
-      where(id: hardware).or(where(id: decided))
-    }
-
     scope :by_project_type, ->(type) {
       case type
       when "Hardware"

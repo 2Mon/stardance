@@ -16,6 +16,30 @@ class Admin::Certification::IntegrityControllerTest < ActionDispatch::Integratio
     @review = ::Certification::Integrity.create!(ship_event: ship_event, status: :pending)
   end
 
+  test "the queue holds a check back until the GOI has reviewed the ship" do
+    sign_in @admin
+    get admin_certification_integrity_reviews_path
+
+    assert_response :success
+    assert_select "a[href=?]", admin_certification_integrity_review_path(@review), count: 0
+
+    Certification::Ysws.create!(user: @shipper, project: @project, post_ship_event: @review.ship_event,
+                                original_minutes: 60, reviewed_at: Time.current)
+    get admin_certification_integrity_reviews_path
+
+    assert_select "a[href=?]", admin_certification_integrity_review_path(@review)
+  end
+
+  test "a GOI review sent back to the maker does not release the check" do
+    Certification::Ysws.create!(user: @shipper, project: @project, post_ship_event: @review.ship_event,
+                                original_minutes: 60, returned_at: Time.current)
+
+    sign_in @admin
+    get admin_certification_integrity_reviews_path
+
+    assert_select "a[href=?]", admin_certification_integrity_review_path(@review), count: 0
+  end
+
   test "the review page says so when nothing was detected" do
     sign_in @admin
     get admin_certification_integrity_review_path(@review)

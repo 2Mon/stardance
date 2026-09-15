@@ -143,6 +143,31 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
     assert_equal @admin.id, check.reviewer_id
   end
 
+  test "a fraud squad member settles every kind of item from the subject page" do
+    squad = create_user(slack_id: "U_FRAUD_VERDICT_SQUAD", display_name: "verdictsquad")
+    squad.grant_role!(:fraud_fraud_squad_squad)
+    sign_in squad
+    flag = flag_a_project
+    check = pending_integrity_check
+    order = pending_order
+
+    post dismiss_admin_certification_report_path(flag),
+         params: { fraud_subject_id: @subject.id }, headers: TURBO_STREAM
+    assert_response :success
+
+    patch admin_certification_integrity_review_path(check),
+          params: { fraud_subject_id: @subject.id, decision: "pass" }, headers: TURBO_STREAM
+    assert_response :success
+
+    post approve_admin_shop_order_path(order),
+         params: { fraud_subject_id: @subject.id }, headers: TURBO_STREAM
+    assert_response :success
+
+    assert_predicate flag.reload, :dismissed?
+    assert_predicate check.reload, :manually_passed?
+    assert_equal "awaiting_periodical_fulfillment", order.reload.aasm_state
+  end
+
   test "an integrity verdict cannot jump another reviewer's claim" do
     other = create_user(slack_id: "U_FRAUD_OTHER", display_name: "otherreviewer")
     check = pending_integrity_check
@@ -453,6 +478,8 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
   def integrity_check_on(project)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: @subject, postable: ship_event)
+    Certification::Ysws.create!(user: @subject, project: project, post_ship_event: ship_event,
+                                original_minutes: 60, reviewed_at: Time.current)
     Certification::Integrity.create!(ship_event: ship_event, status: :pending)
   end
 
@@ -461,6 +488,8 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
     Project::Membership.create!(project: project, user: @subject, role: :owner)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: @subject, postable: ship_event)
+    Certification::Ysws.create!(user: @subject, project: project, post_ship_event: ship_event,
+                                original_minutes: 60, reviewed_at: Time.current)
     Certification::Integrity.create!(ship_event: ship_event, status: :pending)
   end
 end
