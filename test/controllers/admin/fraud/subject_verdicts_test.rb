@@ -279,6 +279,7 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
 
   test "an order row shows its fulfillment cost, stardust cost and the buyer's country" do
     @subject.update!(geocoded_country: "CA")
+    pending_order
 
     get admin_fraud_subject_path(@subject)
 
