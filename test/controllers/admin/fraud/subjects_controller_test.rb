@@ -173,6 +173,32 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     assert_match "No Hackatime identity", response.body
   end
 
+  test "the identity section shows the balance with a way to adjust it" do
+    flag_the_project
+    @subject.ledger_entries.create!(ledgerable: @subject, amount: 25, reason: "Payout", created_by: "test")
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__fact-value--balance", text: /25/
+    assert_select ".fraud-subject__fact-value--balance #adjust-balance-modal form[action=?]",
+                  admin_user_balance_adjustments_path(@subject)
+  end
+
+  test "a reviewer who cannot adjust balances sees the balance without the button" do
+    flag_the_project
+    lead = create_user(slack_id: "U_FRAUD_LEAD", display_name: "fraudlead")
+    lead.grant_role!(:fraud_lead)
+
+    sign_in lead
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__fact-value--balance"
+    assert_select "#adjust-balance-modal", count: 0
+  end
+
   test "the subject page links Hackatime projects without calling Hackatime" do
     flag_the_project
     @subject.identities.create!(provider: "hackatime", uid: "4242", access_token: "t")

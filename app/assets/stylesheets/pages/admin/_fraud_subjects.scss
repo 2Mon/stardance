@@ -343,6 +343,12 @@
     color: var(--color-brand-salmon);
   }
 
+  .fraud-subject__fact-value--balance {
+    align-items: center;
+    display: flex;
+    gap: var(--space-xs);
+  }
+
   .fraud-subject__fact-note {
     color: var(--color-set-3-fg-secondary);
     font-size: var(--font-size-s);
