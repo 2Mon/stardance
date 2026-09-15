@@ -18,7 +18,7 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
       end
     end
     if params.key?(:sort)
-      sort = params[:sort].presence_in(%w[length todo])
+      sort = params[:sort].presence_in(%w[length todo ai])
       if sort
         filters["sort"] = sort
         filters["dir"] = params[:dir] == "asc" ? "asc" : "desc"
@@ -29,9 +29,10 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
     end
     session[FILTER_SESSION_KEY] = filters
 
-    @project_type = filters["project_type"].presence
-    @sort         = filters["sort"].presence_in(%w[length todo])
-    @dir          = filters["dir"] == "asc" ? "asc" : "desc"
+    @project_type   = filters["project_type"].presence
+    @sort           = filters["sort"].presence_in(%w[length todo age ai])
+    @dir            = filters["dir"] == "asc" ? "asc" : "desc"
+    @with_integrity = filters["with_integrity"] != "0"
 
     @search = params[:search].to_s.strip
 
@@ -51,7 +52,7 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
         @project_type ? queue.by_project_type(@project_type) : queue
       end
 
-    scope = scope.with_todo_devlog_count.includes(:project, :user, :integrity_check, :claimed_by)
+    scope = scope.with_todo_devlog_count.includes(:project, :user, :integrity_check, :claimed_by, :mac_analysis)
 
     default_dir = @search.present? ? :desc : :asc
 
@@ -63,6 +64,11 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
       end
 
     @reviews = scope.to_a
+
+    if @sort == "ai"
+      @reviews.sort_by! { |review| Float(review.mac_analysis&.core_signals&.dig("ai_coding_pct"), exception: false) || -1 }
+      @reviews.reverse! if @dir == "desc"
+    end
 
     if !turbo_frame_request? &&
        Flipper.enabled?(:devlog_review_pace, current_user) &&
