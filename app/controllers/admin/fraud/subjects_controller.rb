@@ -32,9 +32,10 @@ class Admin::Fraud::SubjectsController < Admin::ApplicationController
     @approved_orders_count = approved_scope.count
     @approved_orders = approved_scope.includes(:shop_item).order(created_at: :desc).limit(10)
 
-    # Only Hackatime projects tied to a Stardance project can be deep-linked
+    # Only Hackatime projects tied to a live Stardance project can be deep-linked
     # into Telescreen's per-project view; the rest have no project to name.
-    @hackatime_projects = @user.hackatime_projects.where.not(project_id: nil).includes(:project)
+    # Read from the table directly: User#hackatime_projects calls Hackatime live.
+    @hackatime_projects = User::HackatimeProject.where(user: @user).joins(:project).includes(:project)
     @project_summaries = project_summaries_for(@user)
     @review_items = @flags.to_a + @orders.to_a + @integrity_checks.to_a
     @open_payout = FraudReviewPayout.unpaid.find_by(reviewer: current_user, subject: @user, completed_at: nil)

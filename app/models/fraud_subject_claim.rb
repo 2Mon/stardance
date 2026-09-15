@@ -31,21 +31,19 @@ class FraudSubjectClaim < ApplicationRecord
   scope :active, -> { where(claimed_at: CLAIM_TTL.ago..) }
 
   # Takes the person for this reviewer, or returns nil when someone else still
-  # holds them. The conditions live in the UPDATE and the unique index so two
-  # reviewers arriving together cannot both win.
+  # holds them. One upsert on the unique index, so two reviewers arriving
+  # together cannot both win.
   def self.claim(subject, reviewer)
     now = Time.current
 
-    taken = where(subject_id: subject.id)
-            .where("claimed_at < :expired OR reviewer_id = :reviewer_id",
-                   expired: CLAIM_TTL.ago, reviewer_id: reviewer.id)
-            .update_all(reviewer_id: reviewer.id, claimed_at: now, updated_at: now)
-
-    return find_by(subject_id: subject.id) if taken.positive?
-
-    create!(subject: subject, reviewer: reviewer, claimed_at: now)
-  rescue ActiveRecord::RecordNotUnique
-    nil
+    find_by_sql([ <<~SQL.squish, subject_id: subject.id, reviewer_id: reviewer.id, now: now, expired: CLAIM_TTL.ago ]).first
+      INSERT INTO fraud_subject_claims (subject_id, reviewer_id, claimed_at, created_at, updated_at)
+      VALUES (:subject_id, :reviewer_id, :now, :now, :now)
+      ON CONFLICT (subject_id) DO UPDATE
+        SET reviewer_id = EXCLUDED.reviewer_id, claimed_at = EXCLUDED.claimed_at, updated_at = EXCLUDED.updated_at
+        WHERE fraud_subject_claims.claimed_at < :expired OR fraud_subject_claims.reviewer_id = :reviewer_id
+      RETURNING *
+    SQL
   end
 
   def self.held_by_other?(subject, reviewer)

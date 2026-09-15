@@ -21,5 +21,12 @@ module Admin
       else false
       end
     end
+
+    # The bulk form and every order's reject form offer the same projects, so
+    # they are loaded once per render rather than once per order.
+    def fraud_related_project_options(user)
+      @fraud_related_project_options ||= {}
+      @fraud_related_project_options[user.id] ||= user.projects.with_deleted.order(created_at: :desc).pluck(:title, :id)
+    end
   end
 end

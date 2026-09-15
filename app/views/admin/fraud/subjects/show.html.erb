@@ -17,7 +17,7 @@
 
   <%= render "identity", user: @user %>
 
-  <%= render "counts", user: @user %>
+  <%= render "counts", user: @user, flags: @flags, orders: @orders, checks: @integrity_checks %>
 
   <%= render "telescreen_tools" %>
 
@@ -38,7 +38,7 @@
   <section class="fraud-subject__section" aria-labelledby="fraud-subject-orders">
     <h2 class="fraud-subject__section-title" id="fraud-subject-orders">Shop orders</h2>
 
-    <%= render "order_bulk_actions", user: @user %>
+    <%= render "order_bulk_actions", user: @user, orders: @orders %>
 
     <% if @orders.any? %>
       <div class="fraud-subject__items">
@@ -50,7 +50,7 @@
   </section>
 
   <section class="fraud-subject__section" aria-labelledby="fraud-subject-integrity">
-    <%= render "integrity_items", user: @user %>
+    <%= render "integrity_items", user: @user, checks: @integrity_checks %>
   </section>
 
   <%= render "approved_orders", approved_orders: @approved_orders,

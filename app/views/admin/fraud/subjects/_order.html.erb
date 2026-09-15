@@ -67,7 +67,7 @@
 
               <%= f.label :fraud_related_project_id, "Related project", class: "fraud-subject__field-label" %>
               <%= f.select :fraud_related_project_id,
-                           user.projects.with_deleted.order(created_at: :desc).map { |p| [ p.title, p.id ] },
+                           fraud_related_project_options(user),
                            { include_blank: "Pick a project" },
                            required: true, class: "fraud-subject__field" %>
             <% end %>

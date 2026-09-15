@@ -1,5 +1,5 @@
 <%= turbo_frame_tag "fraud-subject-integrity-items" do %>
-  <% checks = Admin::Fraud::SubjectQueue.integrity_checks_for(user) %>
+  <% checks = local_assigns.fetch(:checks) { Admin::Fraud::SubjectQueue.integrity_checks_for(user) }.load %>
 
   <%# The heading sits inside the frame so its count is re-rendered with the
       list a verdict replaces, rather than going stale above it. %>

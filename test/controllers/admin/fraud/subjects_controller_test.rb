@@ -173,6 +173,22 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     assert_match "No Hackatime identity", response.body
   end
 
+  test "the subject page links Hackatime projects without calling Hackatime" do
+    flag_the_project
+    @subject.identities.create!(provider: "hackatime", uid: "4242", access_token: "t")
+    User::HackatimeProject.insert_all([
+      { user_id: @subject.id, project_id: @project.id, name: "orbit-os", created_at: Time.current, updated_at: Time.current }
+    ])
+
+    sign_in @squad
+    HackatimeService.stub(:fetch_stats, ->(*, **) { flunk "the subject page must not call Hackatime" }) do
+      get admin_fraud_subject_path(@subject)
+    end
+
+    assert_response :success
+    assert_select ".fraud-subject__tools a[href=?]", telescreen_hackatime_overview_url("4242", project: "orbit-os")
+  end
+
   test "the dashboard count badge reports how many people are waiting" do
     flag_the_project
 
