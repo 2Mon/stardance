@@ -274,6 +274,22 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
                   telescreen_hackatime_overview_url("4242", project: [ "orbit-os", "orbit os v2" ])
   end
 
+  test "a Hackatime project on a deleted Stardance project gets no Telescreen link" do
+    flag_the_project
+    deleted = Project.create!(title: "Gone build")
+    @subject.identities.create!(provider: "hackatime", uid: "4242", access_token: "t")
+    User::HackatimeProject.insert_all([
+      { user_id: @subject.id, project_id: deleted.id, name: "gone-key", created_at: Time.current, updated_at: Time.current }
+    ])
+    deleted.soft_delete!
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_no_match "Gone build", response.body
+  end
+
   test "a single Hackatime project gets no all-projects link" do
     project = Project.create!(title: "Shipped build")
     pending_integrity_check(project)

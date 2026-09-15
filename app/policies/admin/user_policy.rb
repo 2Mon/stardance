@@ -96,7 +96,7 @@ class Admin::UserPolicy < ApplicationPolicy
   # roles that can work the fraud queue see the figure too.
   def view_usd_cost?
     user&.admin? || user&.fulfillment_person? || user&.shop_manager? ||
-      user&.fraud_lead? || user&.fraud_dept? || user&.fraud_fraud_squad_squad?
+      user&.fraud_lead? || user&.fraud_dept?
   end
 
   def shop_order_action?
@@ -131,8 +131,6 @@ class Admin::UserPolicy < ApplicationPolicy
       return true if record.has_role?(:admin) || record.has_role?(:super_admin)
     end
 
-    protected_roles = [ :admin, :super_admin, :fraud_dept ]
-    shared_protected_roles = user.roles & protected_roles & record.roles
-    shared_protected_roles.any?
+    [ :admin, :super_admin, :fraud_dept ].any? { |role| user.has_role?(role) && record.has_role?(role) }
   end
 end
