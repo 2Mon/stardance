@@ -24,6 +24,7 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "a[href=?]", admin_fraud_subject_path(@subject)
     assert_select ".fraud-subject-card__avatar[src=?]", @subject.avatar
+    assert_select ".fraud-queue__header input.fraud-queue__speedrun-input[role=switch]"
   end
 
   test "the queue leaves out someone another reviewer is holding" do
@@ -112,7 +113,7 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     get admin_fraud_subject_path(@subject)
 
     assert_response :success
-    assert_select "a.fraud-subject__next-button[href=?]", admin_fraud_subject_path(other)
+    assert_select "a.fraud-subject__next-button[href=?][data-fraud-speedrun-target=next]", admin_fraud_subject_path(other)
   end
 
   test "a person still waiting on a verdict gets no next button" do

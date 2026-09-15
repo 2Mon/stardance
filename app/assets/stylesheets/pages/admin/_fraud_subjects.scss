@@ -11,11 +11,19 @@
 // over the .admin-content element baseline declared later in admin.scss.
 
 .fraud-queue {
+  .fraud-queue__header {
+    align-items: center;
+    display: flex;
+    gap: var(--space-m);
+    justify-content: space-between;
+    margin-bottom: var(--space-m);
+  }
+
   .fraud-queue__summary {
     align-items: baseline;
     display: flex;
     gap: var(--space-xs);
-    margin-bottom: var(--space-m);
+    margin: 0;
   }
 
   .fraud-queue__summary-count {
@@ -782,6 +790,60 @@
   .fraud-subject__verdict--hold {
     background: var(--color-brand-yellow);
     color: var(--color-space-bg);
+  }
+}
+
+// Scoped to .admin-content for the same reason as the verdict buttons: the
+// admin checkbox baseline outranks a single nested class.
+.admin-content .fraud-queue {
+  .fraud-queue__speedrun {
+    align-items: center;
+    color: var(--color-brand-cream);
+    cursor: pointer;
+    display: flex;
+    flex-shrink: 0;
+    font-size: var(--font-size-s);
+    font-weight: 700;
+    gap: var(--space-xxs);
+    white-space: nowrap;
+  }
+
+  .fraud-queue__speedrun-input {
+    appearance: none;
+    background: var(--color-set-2-fg-secondary);
+    border-radius: 999px;
+    cursor: pointer;
+    height: 1.125rem;
+    margin: 0;
+    position: relative;
+    transition: background-color 150ms ease-out;
+    width: 2rem;
+  }
+
+  .fraud-queue__speedrun-input::before {
+    background: var(--color-brand-off-white);
+    border-radius: 50%;
+    content: "";
+    height: 0.75rem;
+    left: 0.1875rem;
+    position: absolute;
+    top: 0.1875rem;
+    transition: transform 150ms ease-out;
+    width: 0.75rem;
+  }
+
+  .fraud-queue__speedrun-input:checked {
+    background: var(--color-brand-lilac);
+  }
+
+  .fraud-queue__speedrun-input:checked::before {
+    background: var(--color-space-bg);
+    transform: translateX(0.875rem);
+  }
+
+  .fraud-queue__speedrun-input:focus-visible {
+    outline: 2px solid var(--color-brand-cream);
+    outline-offset: 2px;
   }
 }
 

@@ -232,6 +232,9 @@ application.register(
   FraudPayoutCelebrationController,
 );
 
+import FraudSpeedrunController from "./fraud_speedrun_controller";
+application.register("fraud-speedrun", FraudSpeedrunController);
+
 import FormSubmitOnceController from "./form_submit_once_controller";
 application.register("form-submit-once", FormSubmitOnceController);
 

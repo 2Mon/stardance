@@ -1,6 +1,7 @@
 <% content_for :title, "Fraud review: #{@user.display_name}" %>
 
-<main class="<%= class_names("fraud-subject", "fraud-subject--claimed-elsewhere" => @blocking_claim) %>" role="main">
+<main class="<%= class_names("fraud-subject", "fraud-subject--claimed-elsewhere" => @blocking_claim) %>" role="main"
+      data-controller="fraud-speedrun">
   <%= render "progress", review_items: @review_items, payout: @open_payout %>
 
   <%= render "celebration", payout: nil, total: 0 %>

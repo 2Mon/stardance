@@ -2,6 +2,7 @@
   <% if payout %>
     <div class="fraud-celebration" role="status"
          data-controller="fraud-payout-celebration"
+         data-fraud-speedrun-target="celebration"
          data-fraud-payout-celebration-amount-value="<%= payout.amount.to_f %>"
          data-fraud-payout-celebration-total-value="<%= total.to_f %>"
          data-action="click->fraud-payout-celebration#dismiss">
