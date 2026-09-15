@@ -1,7 +1,7 @@
 <%# Framed and self-sufficient so a verdict can swap it: once the orders it
     offers are settled, the buttons must stop offering them. %>
 <%= turbo_frame_tag "fraud-subject-order-bulk-actions" do %>
-  <% orders = local_assigns.fetch(:orders) { Admin::Fraud::SubjectQueue.orders_for(user) } %>
+  <% orders = local_assigns.fetch(:orders) { Admin::Fraud::SubjectQueue.orders_for(user, reviewer: current_user) } %>
   <% approvable_orders = orders.select(&:approvable?) %>
 
   <% if orders.any? %>

@@ -27,10 +27,11 @@ module Admin
       #
       # Pass a reviewer to get the queue as it should look to them: anyone
       # another reviewer is currently holding drops out, since opening them only
-      # leads to a page that refuses verdicts.
+      # leads to a page that refuses verdicts, and so does any order waiting on
+      # a second reviewer they cannot be.
       def self.relation(reviewer: nil)
         scope = ::User.where(banned: false)
-                      .joins("INNER JOIN (#{items_sql}) fraud_items ON fraud_items.user_id = users.id")
+                      .joins("INNER JOIN (#{items_sql(reviewer)}) fraud_items ON fraud_items.user_id = users.id")
                       .group("users.id")
                       .select(<<~SQL.squish)
                         users.id AS user_id,
@@ -77,9 +78,9 @@ module Admin
           .select("project_memberships.user_id AS user_id, project_reports.created_at AS created_at")
       end
 
-      def self.orders
-        ::ShopOrder.where(aasm_state: ::ShopOrder::FRAUD_REVIEW_STATES)
-                   .select("shop_orders.user_id AS user_id, shop_orders.created_at AS created_at")
+      def self.orders(reviewer: nil)
+        waiting_orders(::ShopOrder.all, reviewer: reviewer)
+          .select("shop_orders.user_id AS user_id, shop_orders.created_at AS created_at")
       end
 
       # Held back until the GOI has reviewed the ship, so a deduction is weighed
@@ -100,11 +101,19 @@ module Admin
           .order(created_at: :asc)
       end
 
-      def self.orders_for(user)
-        user.shop_orders
-            .where(aasm_state: ::ShopOrder::FRAUD_REVIEW_STATES)
-            .includes(:shop_item)
-            .order(created_at: :asc)
+      def self.orders_for(user, reviewer: nil)
+        waiting_orders(user.shop_orders, reviewer: reviewer)
+          .includes(:shop_item, :reviews)
+          .order(created_at: :asc)
+      end
+
+      # A two-approval order the reviewer has already reviewed is waiting on
+      # someone else, so it is not their work.
+      def self.waiting_orders(scope, reviewer:)
+        scope = scope.where(aasm_state: ::ShopOrder::FRAUD_REVIEW_STATES)
+        return scope unless reviewer
+
+        scope.where.not(id: ::ShopOrderReview.awaiting_another_reviewer(reviewer))
       end
 
       # The checks a cascading verdict settled alongside the one actually
@@ -138,10 +147,10 @@ module Admin
           .order(created_at: :asc)
       end
 
-      def self.items_sql
+      def self.items_sql(reviewer)
         [
           branch_sql(flags, "flag", FLAG_WEIGHT),
-          branch_sql(orders, "order", ORDER_WEIGHT),
+          branch_sql(orders(reviewer: reviewer), "order", ORDER_WEIGHT),
           branch_sql(integrity_checks, "integrity", INTEGRITY_WEIGHT)
         ].join(" UNION ALL ")
       end
@@ -150,7 +159,7 @@ module Admin
         "SELECT user_id, created_at, #{::ActiveRecord::Base.connection.quote(kind)} AS kind, #{weight} AS weight FROM (#{scope.to_sql}) AS #{kind}_items"
       end
 
-      private_class_method :items_sql, :branch_sql
+      private_class_method :waiting_orders, :items_sql, :branch_sql
     end
   end
 end

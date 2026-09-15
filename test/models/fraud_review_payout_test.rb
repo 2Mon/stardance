@@ -204,6 +204,19 @@ class FraudReviewPayoutTest < ActiveSupport::TestCase
     assert_not_includes FraudPayoutRun.payout_eligible_orders, order
   end
 
+  test "a first review on a two-approval order is paid as the order it reviewed" do
+    order = order_for_subject
+    order.update_columns(frozen_item_price: FraudReviewPayout::HIGH_VALUE_ORDER_STARDUST + 1)
+    review = order.reviews.create!(user: @reviewer, verdict: "approve", reason: "Receipts check out")
+
+    payout = FraudReviewPayout.claim!(review, reviewer: @reviewer, subject: @subject)
+
+    assert_equal 1, payout.order_count
+    assert_equal FraudReviewPayout.amount_for(order: FraudReviewPayout::HIGH_VALUE_ORDER_WEIGHT), payout.amount.to_f
+    assert_equal payout.id, review.reload.fraud_review_payout_id
+    assert_nil order.reload.fraud_review_payout_id, "the order is left for whoever approves it"
+  end
+
   private
 
   def flagged_report

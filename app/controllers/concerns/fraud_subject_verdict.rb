@@ -43,8 +43,11 @@ module FraudSubjectVerdict
     fraud_subject.present? && FraudSubjectClaim.held_by_other?(fraud_subject, current_user)
   end
 
-  def render_fraud_subject_verdict(record, note, refresh_integrity: false)
-    render turbo_stream: fraud_subject_verdict_streams([ [ record, note ] ], refresh_integrity: refresh_integrity)
+  # `claim` is what the reviewer is paid for when that is not the item swapped
+  # out: a first review on a two-approval order settles the review for this
+  # reviewer while the order itself waits on a second one.
+  def render_fraud_subject_verdict(record, note, refresh_integrity: false, claim: record)
+    render turbo_stream: fraud_subject_verdict_streams([ [ record, note ] ], refresh_integrity: refresh_integrity, claims: [ claim ])
   end
 
   # A bulk action settles a whole pile in one submission. Each item is swapped
@@ -54,7 +57,7 @@ module FraudSubjectVerdict
     render turbo_stream: fraud_subject_verdict_streams(settled)
   end
 
-  def fraud_subject_verdict_streams(settled, refresh_integrity: false)
+  def fraud_subject_verdict_streams(settled, refresh_integrity: false, claims: nil)
     streams = []
     records = settled.map(&:first)
 
@@ -107,7 +110,7 @@ module FraudSubjectVerdict
     end
 
     cleared = fraud_subject_cleared?
-    payout = fraud_subject_payout_for(records, cleared: cleared)
+    payout = fraud_subject_payout_for(claims || records, cleared: cleared)
 
     if payout
       payout.complete! if cleared && payout.completed_at.nil?
@@ -127,8 +130,11 @@ module FraudSubjectVerdict
     end
 
     # Keyed off the queue rather than the payout: the person is finished even
-    # when the last item was already claimed and earned nothing further.
+    # when the last item was already claimed and earned nothing further. The
+    # claim is let go because an order can still be waiting on a second
+    # reviewer, who should not have to wait out the hour.
     if cleared
+      FraudSubjectClaim.release(fraud_subject, current_user)
       streams << turbo_stream.replace(
         "fraud-subject-next",
         partial: "admin/fraud/subjects/next_subject",
@@ -161,20 +167,22 @@ module FraudSubjectVerdict
 
   # A cascading integrity verdict settles siblings this request never touched,
   # so the queue is re-read rather than inferred from the item just decided.
+  # Cleared means cleared for this reviewer: an order waiting on a second
+  # reviewer is not theirs to finish.
   def fraud_subject_cleared?
     Admin::Fraud::SubjectQueue.flags_for(fraud_subject).none? &&
-      Admin::Fraud::SubjectQueue.orders_for(fraud_subject).none? &&
+      Admin::Fraud::SubjectQueue.orders_for(fraud_subject, reviewer: current_user).none? &&
       Admin::Fraud::SubjectQueue.integrity_checks_for(fraud_subject).none?
   end
 
   # For a change that leaves the item in the queue, like putting an order on
   # hold: the row is re-rendered in place rather than swapped for a note.
-  def render_fraud_subject_item(record, partial:)
+  def render_fraud_subject_item(record, partial:, **locals)
     render turbo_stream: turbo_stream.replace(
       ActionView::RecordIdentifier.dom_id(record),
       partial: partial,
       object: record,
-      locals: { user: fraud_subject }
+      locals: { user: fraud_subject, **locals }
     )
   end
 end

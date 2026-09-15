@@ -64,6 +64,8 @@ class FraudReviewPayout < ApplicationRecord
            inverse_of: :fraud_review_payout, dependent: :nullify
   has_many :shop_orders, foreign_key: :fraud_review_payout_id,
            inverse_of: :fraud_review_payout, dependent: :nullify
+  has_many :shop_order_reviews, foreign_key: :fraud_review_payout_id,
+           inverse_of: :fraud_review_payout, dependent: :nullify
   has_many :certification_integrities, class_name: "Certification::Integrity",
            foreign_key: :fraud_review_payout_id, inverse_of: :fraud_review_payout, dependent: :nullify
 
@@ -74,9 +76,13 @@ class FraudReviewPayout < ApplicationRecord
   scope :unpaid, -> { where(fraud_payout_line_id: nil) }
   scope :payable, -> { unpaid.where.not(completed_at: nil) }
 
+  # A first review on a two-approval order counts as the order it reviewed:
+  # both reviewers are paid for the order, the first through their review and
+  # the one who approves it through the order itself.
   KIND_COUNTERS = {
     "Project::Report" => :flag_count,
     "ShopOrder" => :order_count,
+    "ShopOrderReview" => :order_count,
     "Certification::Integrity" => :integrity_count
   }.freeze
 
@@ -131,13 +137,15 @@ class FraudReviewPayout < ApplicationRecord
   def weights
     {
       flag: (flag_count * FLAG_WEIGHT).round(4),
-      order: shop_orders.sum { |order| self.class.order_weight(order) }.round(4),
+      order: reviewed_orders.sum { |order| self.class.order_weight(order) }.round(4),
       integrity: certification_integrities.sum { |check| self.class.integrity_weight(check) }.round(4)
     }
   end
 
+  def reviewed_orders = shop_orders.to_a + shop_order_reviews.includes(:shop_order).map(&:shop_order)
+
   def recalculate_amount
-    [ :shop_orders, :certification_integrities ].each { |name| association(name).reset }
+    [ :shop_orders, :shop_order_reviews, :certification_integrities ].each { |name| association(name).reset }
 
     self.amount = self.class.amount_for(**weights)
   end

@@ -139,6 +139,30 @@ class Admin::Fraud::SubjectQueueTest < ActiveSupport::TestCase
     assert_equal [ 1, 0 ], [ subject.flag_count, subject.integrity_count ]
   end
 
+  test "an order waiting on a second reviewer drops off only for the reviewer who gave the first" do
+    buyer = user_with_order(age: 3.days.ago)
+    first = create_user(slack_id: "u-first-reviewer", display_name: "firstreviewer")
+    second = create_user(slack_id: "u-second-reviewer", display_name: "secondreviewer")
+    buyer.shop_orders.sole.reviews.create!(user: first, verdict: "approve", reason: "Receipts check out")
+
+    assert_not_includes ranked_ids_for(first), buyer.id
+    assert_includes ranked_ids_for(second), buyer.id
+    assert_empty Admin::Fraud::SubjectQueue.orders_for(buyer, reviewer: first)
+    assert_equal 1, Admin::Fraud::SubjectQueue.orders_for(buyer, reviewer: second).size
+  end
+
+  test "an order with both reviews is back for either reviewer to approve" do
+    buyer = user_with_order(age: 3.days.ago)
+    first = create_user(slack_id: "u-first-reviewer", display_name: "firstreviewer")
+    second = create_user(slack_id: "u-second-reviewer", display_name: "secondreviewer")
+    order = buyer.shop_orders.sole
+    order.reviews.create!(user: first, verdict: "approve", reason: "Receipts check out")
+    order.reviews.create!(user: second, verdict: "approve", reason: "Agreed")
+
+    assert_includes ranked_ids_for(first), buyer.id
+    assert_includes ranked_ids_for(second), buyer.id
+  end
+
   private
 
   def subjects = Admin::Fraud::SubjectQueue.subjects

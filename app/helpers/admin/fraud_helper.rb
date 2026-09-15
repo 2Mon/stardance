@@ -17,9 +17,15 @@ module Admin
       case record
       when ::Project::Report then !record.pending?
       when ::Certification::Integrity then !record.pending?
-      when ::ShopOrder then !record.aasm_state.in?(::ShopOrder::FRAUD_REVIEW_STATES)
+      when ::ShopOrder then !record.aasm_state.in?(::ShopOrder::FRAUD_REVIEW_STATES) || fraud_review_passed_on?(record)
       else false
       end
+    end
+
+    # This reviewer gave their half of a two-approval order, so it is finished
+    # for them even though it stays open for someone else.
+    def fraud_review_passed_on?(order)
+      order.reviews.any? { |review| review.user_id == current_user.id } && order.requires_additional_review?
     end
 
     # The bulk form and every order's reject form offer the same projects, so

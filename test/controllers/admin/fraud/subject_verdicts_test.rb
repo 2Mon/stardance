@@ -397,6 +397,62 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
     assert_includes FraudReviewPayout.payable, payout
   end
 
+  test "a two-approval order offers an approval that asks for a reason" do
+    order = high_value_order
+
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__second-review form[action=?] textarea[required]", review_order_admin_shop_order_path(order)
+  end
+
+  test "a first approval on a two-approval order pays the reviewer and leaves the order for someone else" do
+    order = high_value_order
+    FraudSubjectClaim.claim(@subject, @admin)
+
+    post review_order_admin_shop_order_path(order),
+         params: { fraud_subject_id: @subject.id, verdict: "approve", review_reason: "Receipts check out" },
+         headers: TURBO_STREAM
+
+    assert_response :success
+    assert_equal "pending", order.reload.aasm_state
+    assert_nil order.fraud_review_payout_id, "the order is left for whoever approves it"
+
+    payout = FraudReviewPayout.find_by!(reviewer: @admin, subject: @subject)
+    assert_equal payout.id, order.reviews.sole.fraud_review_payout_id
+    assert_not_nil payout.completed_at, "nothing else on the person is left for this reviewer"
+    assert_nil FraudSubjectClaim.find_by(subject_id: @subject.id), "the claim is let go for the second reviewer"
+    assert_match "waits on another reviewer", response.body
+  end
+
+  test "the second approval on a two-approval order approves it and pays that reviewer too" do
+    order = high_value_order
+    first = create_user(slack_id: "U_FRAUD_FIRST_REVIEWER", display_name: "firstreviewer")
+    first.grant_role!(:fraud_dept)
+    order.reviews.create!(user: first, verdict: "approve", reason: "Receipts check out")
+
+    post review_order_admin_shop_order_path(order),
+         params: { fraud_subject_id: @subject.id, verdict: "approve", review_reason: "Agreed" },
+         headers: TURBO_STREAM
+
+    assert_response :success
+    assert_equal "awaiting_periodical_fulfillment", order.reload.aasm_state
+    assert_equal FraudReviewPayout.find_by!(reviewer: @admin, subject: @subject).id, order.fraud_review_payout_id
+  end
+
+  test "a review without a reason keeps the reviewer on the order with the error" do
+    order = high_value_order
+
+    post review_order_admin_shop_order_path(order),
+         params: { fraud_subject_id: @subject.id, verdict: "approve", review_reason: "" },
+         headers: TURBO_STREAM
+
+    assert_response :success
+    assert_empty order.reviews
+    assert_match(/Reason can(&#39;|')t be blank/, response.body)
+    assert_select ".fraud-subject__item-error"
+  end
+
   test "a bulk verdict cannot jump another reviewer's claim" do
     other = create_user(slack_id: "U_FRAUD_BULK_HOLDER", display_name: "bulkholder")
     FraudSubjectClaim.claim(@subject, other)
@@ -456,6 +512,12 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
     order = @subject.shop_orders.create!(shop_item: shop_item, quantity: 1,
                                          frozen_address: { "country" => "US" })
     order.update_columns(aasm_state: "pending")
+    order
+  end
+
+  def high_value_order
+    order = pending_order
+    order.update_columns(frozen_item_price: ShopOrder::HIGH_VALUE_THRESHOLD + 1)
     order
   end
 
