@@ -4,7 +4,7 @@
     <span class="fraud-subject__section-count"><%= approved_orders_count %></span>
   </h2>
 
-  <% if approved_orders.any? %>
+  <% if approved_orders_count.positive? %>
     <ul class="fraud-subject__approved-orders">
       <% approved_orders.each do |order| %>
         <li class="fraud-subject__approved-order">

@@ -13,19 +13,22 @@
 #  created_at             :datetime         not null
 #  updated_at             :datetime         not null
 #  claimed_by_id          :bigint
+#  fraud_review_payout_id :bigint
 #  reviewer_id            :bigint
 #  ship_event_id          :bigint           not null
 #
 # Indexes
 #
-#  index_certification_integrities_on_claimed_by_id  (claimed_by_id)
-#  index_certification_integrities_on_reviewer_id    (reviewer_id)
-#  index_certification_integrities_on_ship_event_id  (ship_event_id) UNIQUE
-#  index_certification_integrities_on_status         (status)
+#  index_certification_integrities_on_claimed_by_id           (claimed_by_id)
+#  index_certification_integrities_on_fraud_review_payout_id  (fraud_review_payout_id)
+#  index_certification_integrities_on_reviewer_id             (reviewer_id)
+#  index_certification_integrities_on_ship_event_id           (ship_event_id) UNIQUE
+#  index_certification_integrities_on_status                  (status)
 #
 # Foreign Keys
 #
 #  fk_rails_...  (claimed_by_id => users.id)
+#  fk_rails_...  (fraud_review_payout_id => fraud_review_payouts.id)
 #  fk_rails_...  (reviewer_id => users.id)
 #  fk_rails_...  (ship_event_id => post_ship_events.id)
 #
@@ -36,8 +39,23 @@ module Certification
     belongs_to :ship_event, class_name: "Post::ShipEvent", inverse_of: :integrity_check
     belongs_to :reviewer, class_name: "User", optional: true
     belongs_to :claimed_by, class_name: "User", optional: true
+    belongs_to :fraud_review_payout, optional: true, inverse_of: :certification_integrities
+
+    # The GOI's review of the same ship. It usually lands before the integrity
+    # check does, so a fraud reviewer is adjusting a number the GOI already set.
+    has_one :ysws_review, through: :ship_event
 
     delegate :project, to: :ship_event
+
+    # Checks on a ship the GOI has finished reviewing. A returned YSWS review is
+    # replaced by a fresh one on the same ship, so any completed review counts.
+    scope :past_goi, -> {
+      where(
+        Certification::Ysws.where("certification_ysws_reviews.post_ship_event_id = certification_integrities.ship_event_id")
+                           .where.not(reviewed_at: nil)
+                           .arel.exists
+      )
+    }
 
     # The project, including soft-deleted ones: banning a user soft-deletes their
     # projects, and Post::ShipEvent#project is a has_one :through that applies

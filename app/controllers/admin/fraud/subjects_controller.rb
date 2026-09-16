@@ -9,7 +9,7 @@ class Admin::Fraud::SubjectsController < Admin::ApplicationController
     # GROUP BY, so a SQL page of it still needs a second query to count the
     # groups, and the queue is small enough (about a thousand people) that one
     # pass is cheaper than two round trips.
-    subjects = Admin::Fraud::SubjectQueue.subjects
+    subjects = Admin::Fraud::SubjectQueue.subjects_for(current_user)
     @total_subjects = subjects.size
     @pagy, @subjects = pagy(:offset, subjects, limit: SUBJECTS_PER_PAGE)
     @users = User.where(id: @subjects.map(&:user_id)).index_by(&:id)
@@ -19,20 +19,27 @@ class Admin::Fraud::SubjectsController < Admin::ApplicationController
     @user = User.find(params[:id])
     authorize :fraud_subject, policy_class: Admin::FraudSubjectPolicy
 
+    # Opening a person takes them for an hour, so two reviewers do not work
+    # the same queue. A claim nobody refreshes simply lapses.
+    claim = FraudSubjectClaim.claim(@user, current_user)
+    @blocking_claim = FraudSubjectClaim.active.find_by(subject_id: @user.id) unless claim&.reviewer_id == current_user.id
+
     @flags = Admin::Fraud::SubjectQueue.flags_for(@user)
     @orders = Admin::Fraud::SubjectQueue.orders_for(@user)
-    @approvable_orders = @orders.select(&:approvable?)
     @integrity_checks = Admin::Fraud::SubjectQueue.integrity_checks_for(@user)
-    @projects_for_rejection = @user.projects.with_deleted.distinct.order(created_at: :desc)
 
     approved_scope = @user.shop_orders.where(aasm_state: %w[awaiting_periodical_fulfillment fulfilled])
     @approved_orders_count = approved_scope.count
     @approved_orders = approved_scope.includes(:shop_item).order(created_at: :desc).limit(10)
 
-    # Only Hackatime projects tied to a Stardance project can be deep-linked
+    # Only Hackatime projects tied to a live Stardance project can be deep-linked
     # into Telescreen's per-project view; the rest have no project to name.
-    @hackatime_projects = @user.hackatime_projects.where.not(project_id: nil).includes(:project)
+    # Read from the table directly: User#hackatime_projects calls Hackatime live.
+    @hackatime_projects = User::HackatimeProject.where(user: @user).joins(:project).includes(:project)
     @project_summaries = project_summaries_for(@user)
+    @review_items = @flags.to_a + @orders.to_a + @integrity_checks.to_a
+    @open_payout = FraudReviewPayout.unpaid.find_by(reviewer: current_user, subject: @user, completed_at: nil)
+    @next_subject_id = Admin::Fraud::SubjectQueue.next_subject_id(reviewer: current_user, after: @user) if @review_items.empty?
   end
 
   private

@@ -17,17 +17,8 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
         filters.delete("project_type")
       end
     end
-    # Only the opt-out is worth persisting — an absent key means the default
-    # "integrity checks only" view.
-    if params.key?(:with_integrity)
-      if params[:with_integrity] == "0"
-        filters["with_integrity"] = "0"
-      else
-        filters.delete("with_integrity")
-      end
-    end
     if params.key?(:sort)
-      sort = params[:sort].presence_in(%w[length todo])
+      sort = params[:sort].presence_in(%w[length todo age ai])
       if sort
         filters["sort"] = sort
         filters["dir"] = params[:dir] == "asc" ? "asc" : "desc"
@@ -39,14 +30,15 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
     session[FILTER_SESSION_KEY] = filters
 
     @project_type   = filters["project_type"].presence
-    @sort           = filters["sort"].presence_in(%w[length todo])
+    @sort           = filters["sort"].presence_in(%w[length todo age ai])
     @dir            = filters["dir"] == "asc" ? "asc" : "desc"
     @with_integrity = filters["with_integrity"] != "0"
 
     @search = params[:search].to_s.strip
 
+    # Every pending review, whatever its integrity state: the GOI goes first, and
+    # integrity waits on it (Certification::Integrity.past_goi).
     queue = ::Certification::Ysws.pending.unclaimed_or_claimed_by(current_user)
-    queue = queue.with_integrity_check if @with_integrity
 
     software_counts = queue.joins(:project).where(projects: { hardware_stage: nil }).group("projects.project_type").count
     hardware_count = queue.joins(:project).where.not(projects: { hardware_stage: nil }).count
@@ -60,7 +52,7 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
         @project_type ? queue.by_project_type(@project_type) : queue
       end
 
-    scope = scope.with_todo_devlog_count.includes(:project, :user, :integrity_check, :claimed_by)
+    scope = scope.with_todo_devlog_count.includes(:project, :user, :integrity_check, :claimed_by, :mac_analysis)
 
     default_dir = @search.present? ? :desc : :asc
 
@@ -68,10 +60,16 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
       case @sort
       when "length" then scope.order(Arel.sql("certification_ysws_reviews.original_minutes #{@dir}"))
       when "todo"   then scope.order(Arel.sql("todo_devlog_count #{@dir}"))
+      when "age"    then scope.order(Arel.sql("certification_ysws_reviews.created_at #{@dir}"))
       else               scope.order(created_at: default_dir)
       end
 
     @reviews = scope.to_a
+
+    if @sort == "ai"
+      @reviews.sort_by! { |review| Float(review.mac_analysis&.core_signals&.dig("ai_coding_pct"), exception: false) || -1 }
+      @reviews.reverse! if @dir == "desc"
+    end
 
     if !turbo_frame_request? &&
        Flipper.enabled?(:devlog_review_pace, current_user) &&
@@ -149,6 +147,11 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
     # The MAC pre-screen is flagged per reviewer: left nil when it's off so the
     # banner and the per-devlog notes both disappear from a single check.
     @mac_analysis = @review.mac_analysis if Flipper.enabled?(:mac_analysis, current_user)
+
+    # Flag-gated keyboard-shortcut layer for the review GUI (j/k nav, verdict
+    # keys, lapse lightbox). Off by default; attaches its Stimulus controller
+    # only when enabled for this reviewer.
+    @ysws_review_shortcuts = Flipper.enabled?(:ysws_review_shortcuts, current_user)
 
     @lapse_timelapses = lapse_timelapses_for_ysws_review
     @lookout_recordings = lookout_recordings_for_ysws_review
@@ -246,12 +249,11 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
   end
 
   def ysws_review_filters
-    session[FILTER_SESSION_KEY].to_h.slice("project_type", "sort", "dir", "with_integrity")
+    session[FILTER_SESSION_KEY].to_h.slice("project_type", "sort", "dir")
   end
 
   def ysws_review_filter_params?
-    params.key?(:project_type) || params.key?(:sort) || params.key?(:dir) ||
-      params.key?(:with_integrity)
+    params.key?(:project_type) || params.key?(:sort) || params.key?(:dir)
   end
 
 
@@ -400,7 +402,7 @@ class Admin::Certification::YswsController < Admin::Certification::ApplicationCo
 
     render json: {
       success: true,
-      message: "Review completed! Syncing to Airtable in the background...",
+      message: "Review completed! It syncs to Airtable once integrity has signed off.",
       redirect_url: admin_certification_ysws_reviews_path
     }, status: :ok
   rescue StandardError => e

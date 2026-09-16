@@ -7,7 +7,7 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
 
   setup do
     @squad = create_user(slack_id: "U_FRAUD_SQUAD", display_name: "squaddie")
-    @squad.grant_role!(:fraud_squad)
+    @squad.grant_role!(:fraud_fraud_squad_squad)
 
     @subject = create_user(slack_id: "U_FRAUD_SUBJECT", display_name: "subject")
     @reporter = create_user(slack_id: "U_FRAUD_REPORTER", display_name: "reporter")
@@ -24,16 +24,123 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "a[href=?]", admin_fraud_subject_path(@subject)
     assert_select ".fraud-subject-card__avatar[src=?]", @subject.avatar
+    assert_select ".fraud-queue__header input.fraud-queue__speedrun-input[role=switch]"
   end
 
-  test "the queue leaves out someone with only an integrity check" do
-    pending_integrity_check(@project)
+  test "the queue leaves out someone another reviewer is holding" do
+    flag_the_project
+    holder = create_user(slack_id: "U_FRAUD_HOLDER", display_name: "holder")
+    FraudSubjectClaim.claim(@subject, holder)
 
     sign_in @squad
     get admin_fraud_subjects_path
 
     assert_response :success
     assert_select "a[href=?]", admin_fraud_subject_path(@subject), count: 0
+    assert_select ".fraud-queue__empty"
+  end
+
+  test "the queue still lists the person the reviewer is holding themselves" do
+    flag_the_project
+    FraudSubjectClaim.claim(@subject, @squad)
+
+    sign_in @squad
+    get admin_fraud_subjects_path
+
+    assert_response :success
+    assert_select "a[href=?]", admin_fraud_subject_path(@subject)
+  end
+
+  test "a check still waiting on the GOI stays off the subject page" do
+    flag_the_project
+    pending_integrity_check(@project)
+    pending_integrity_check(@project, goi_completed: false)
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__progress-slot--integrity", count: 1
+  end
+
+  test "the progress bar gives each waiting item one slot" do
+    flag_the_project
+    pending_integrity_check(@project)
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__progress-slot", count: 2
+    assert_select ".fraud-subject__progress-slot--flag", count: 1
+    assert_select ".fraud-subject__progress-slot--integrity", count: 1
+    assert_select ".fraud-subject__progress-slot--done", count: 0
+  end
+
+  test "opening a person takes them for the reviewer" do
+    flag_the_project
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_equal @squad.id, FraudSubjectClaim.sole.reviewer_id
+    assert_select ".fraud-subject__claim", count: 0
+  end
+
+  test "a person held by someone else shows the holder and hides the verdicts" do
+    holder = create_user(slack_id: "U_FRAUD_HOLDS", display_name: "holdsit")
+    FraudSubjectClaim.claim(@subject, holder)
+    flag_the_project
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject--claimed-elsewhere"
+    assert_select ".fraud-subject__claim", text: /holdsit/
+    assert_equal holder.id, FraudSubjectClaim.sole.reviewer_id, "the holder is not displaced"
+  end
+
+  test "a cleared person offers the next one in the queue" do
+    other = create_user(slack_id: "U_FRAUD_NEXT", display_name: "nextup")
+    project = Project.create!(title: "Next flagged")
+    Project::Membership.create!(project:, user: other, role: :owner)
+    Project::Report.create!(project:, reporter: @squad, reason: "fraud",
+                            details: "Detailed fraud report body for the test suite.")
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select "a.fraud-subject__next-button[href=?][data-fraud-speedrun-target=next]", admin_fraud_subject_path(other)
+  end
+
+  test "a person still waiting on a verdict gets no next button" do
+    flag_the_project
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__next-button", count: 0
+  end
+
+  test "the next person skips anyone another reviewer is holding" do
+    held = create_user(slack_id: "U_FRAUD_HELD", display_name: "heldup")
+    holder = create_user(slack_id: "U_FRAUD_HOLDER2", display_name: "holder2")
+    project = Project.create!(title: "Held flagged")
+    Project::Membership.create!(project:, user: held, role: :owner)
+    Project::Report.create!(project:, reporter: @squad, reason: "fraud",
+                            details: "Detailed fraud report body for the test suite.")
+    FraudSubjectClaim.claim(held, holder)
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__next-button", count: 0
+    assert_select ".fraud-subject__next-empty"
   end
 
   test "the queue leaves out quality reports the fraud team does not own" do
@@ -64,6 +171,48 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_match "No Hackatime identity", response.body
+  end
+
+  test "the identity section shows the balance with a way to adjust it" do
+    flag_the_project
+    @subject.ledger_entries.create!(ledgerable: @subject, amount: 25, reason: "Payout", created_by: "test")
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__fact-value--balance", text: /25/
+    assert_select ".fraud-subject__fact-value--balance #adjust-balance-modal form[action=?]",
+                  admin_user_balance_adjustments_path(@subject)
+  end
+
+  test "a reviewer who cannot adjust balances sees the balance without the button" do
+    flag_the_project
+    lead = create_user(slack_id: "U_FRAUD_LEAD", display_name: "fraudlead")
+    lead.grant_role!(:fraud_lead)
+
+    sign_in lead
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__fact-value--balance"
+    assert_select "#adjust-balance-modal", count: 0
+  end
+
+  test "the subject page links Hackatime projects without calling Hackatime" do
+    flag_the_project
+    @subject.identities.create!(provider: "hackatime", uid: "4242", access_token: "t")
+    User::HackatimeProject.insert_all([
+      { user_id: @subject.id, project_id: @project.id, name: "orbit-os", created_at: Time.current, updated_at: Time.current }
+    ])
+
+    sign_in @squad
+    HackatimeService.stub(:fetch_stats, ->(*, **) { flunk "the subject page must not call Hackatime" }) do
+      get admin_fraud_subject_path(@subject)
+    end
+
+    assert_response :success
+    assert_select ".fraud-subject__tools a[href=?]", telescreen_hackatime_overview_url("4242", project: "orbit-os")
   end
 
   test "the dashboard count badge reports how many people are waiting" do
@@ -151,6 +300,22 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
                   telescreen_hackatime_overview_url("4242", project: [ "orbit-os", "orbit os v2" ])
   end
 
+  test "a Hackatime project on a deleted Stardance project gets no Telescreen link" do
+    flag_the_project
+    deleted = Project.create!(title: "Gone build")
+    @subject.identities.create!(provider: "hackatime", uid: "4242", access_token: "t")
+    User::HackatimeProject.insert_all([
+      { user_id: @subject.id, project_id: deleted.id, name: "gone-key", created_at: Time.current, updated_at: Time.current }
+    ])
+    deleted.soft_delete!
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_no_match "Gone build", response.body
+  end
+
   test "a single Hackatime project gets no all-projects link" do
     project = Project.create!(title: "Shipped build")
     pending_integrity_check(project)
@@ -200,13 +365,66 @@ class Admin::Fraud::SubjectsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "an integrity row shows what the GOI already cut the claim down to" do
+    check = pending_integrity_check(@project)
+    goi_review_on(check, claimed: 1200, approved: 450)
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__vital-value--cut", text: /GOI approved 7\.5 hours of 20\.0/
+  end
+
+  test "an integrity row says so when the GOI cut nothing" do
+    check = pending_integrity_check(@project)
+    goi_review_on(check, claimed: 300, approved: 300)
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_select ".fraud-subject__vital-value", text: /GOI approved all 5\.0 hours/
+    assert_select ".fraud-subject__vital-value--cut", count: 0
+  end
+
+  test "an integrity row says nothing about the GOI before that review lands" do
+    check = pending_integrity_check(@project)
+    goi_review_on(check, claimed: 600, approved: 120).update_columns(reviewed_at: nil)
+
+    sign_in @squad
+    get admin_fraud_subject_path(@subject)
+
+    assert_response :success
+    assert_select ".fraud-subject__vital-value", text: /GOI/, count: 0
+  end
+
   private
 
-  def pending_integrity_check(project)
+  # Fills in the GOI review pending_integrity_check already created, since a
+  # ship has only one and a second would leave ysws_review ambiguous.
+  def goi_review_on(check, claimed:, approved:)
+    project = check.ship_event.post.project
+    review = check.ship_event.ysws_review
+    review.update!(original_minutes: claimed, reviewer: @admin || @squad, reviewed_at: 2.days.ago)
+
+    devlog = Post::Devlog.new(body: "Devlog", duration_seconds: claimed * 60)
+    devlog.uploading_attachments = true
+    devlog.save!
+    Post.create!(project: project, user: @subject, postable: devlog)
+
+    review.devlog_reviews.create!(post_devlog_id: devlog.id, original_minutes: claimed,
+                                  approved_minutes: approved, status: :approved,
+                                  justification: "Reviewed")
+    review
+  end
+
+  def pending_integrity_check(project, goi_completed: true)
     Project::Membership.create!(project: project, user: @subject, role: :owner) unless
       Project::Membership.exists?(project: project, user: @subject)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: @subject, postable: ship_event)
+    Certification::Ysws.create!(user: @subject, project: project, post_ship_event: ship_event,
+                                original_minutes: 60, reviewed_at: (Time.current if goi_completed))
     Certification::Integrity.create!(ship_event: ship_event, status: :pending)
   end
 

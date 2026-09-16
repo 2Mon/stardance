@@ -1,8 +1,8 @@
 require "test_helper"
 
-# The order a fraud reviewer works people in. Reports outrank shop orders;
-# integrity checks remain available as detail-page context but do not put a
-# person into the default queue.
+# The order a fraud reviewer works people in. Flags outrank shop orders outrank
+# integrity checks, because the first two hold up something the person can see
+# happening to them and the third does not.
 class Admin::Fraud::SubjectQueueTest < ActiveSupport::TestCase
   include UserFactory
 
@@ -12,32 +12,29 @@ class Admin::Fraud::SubjectQueueTest < ActiveSupport::TestCase
     @reporter = create_user(slack_id: "u-reporter", display_name: "reporter")
   end
 
-  test "an integrity check alone does not enter the default queue" do
-    user_with_integrity(age: 25.days.ago)
+  test "a fresher flag outranks an older integrity check" do
+    flagged = user_with_flag(age: 10.days.ago)
+    checked = user_with_integrity(age: 25.days.ago)
 
-    assert_empty subjects
+    assert_equal [ flagged.id, checked.id ], ranked_ids
   end
 
-  test "a report outranks an order with the same age" do
-    flagged = user_with_flag(age: 5.days.ago)
+  test "a shop order outranks an integrity check of the same age" do
     ordered = user_with_order(age: 5.days.ago)
+    checked = user_with_integrity(age: 5.days.ago)
 
-    assert_equal [ flagged.id, ordered.id ], ranked_ids
+    assert_equal [ ordered.id, checked.id ], ranked_ids
   end
 
   test "priority is the single highest scoring item, not the sum" do
-    one_old_order = user_with_order(age: 20.days.ago)
-    many_fresh_flags = create_user(slack_id: "u-many", display_name: "many")
-    5.times do
-      project = Project.create!(title: "Flagged #{SecureRandom.hex(4)}")
-      Project::Membership.create!(project:, user: many_fresh_flags, role: :owner)
-      flag_for(project, age: 1.day.ago)
-    end
+    one_old_flag = user_with_flag(age: 20.days.ago)
+    many_fresh_checks = create_user(slack_id: "u-many", display_name: "many")
+    5.times { pending_integrity_for(many_fresh_checks, age: 1.day.ago) }
 
-    assert_equal [ one_old_order.id, many_fresh_flags.id ], ranked_ids
+    assert_equal [ one_old_flag.id, many_fresh_checks.id ], ranked_ids
   end
 
-  test "counts reports and orders for one person" do
+  test "counts each source separately for one person" do
     user = user_with_flag(age: 3.days.ago)
     user.update!(has_gotten_free_stickers: true) # clears the shop-tutorial gate
     order_for(user, age: 2.days.ago)
@@ -46,8 +43,8 @@ class Admin::Fraud::SubjectQueueTest < ActiveSupport::TestCase
     subject = subjects.sole
 
     assert_equal user.id, subject.user_id
-    assert_equal [ 1, 1 ], [ subject.flag_count, subject.order_count ]
-    assert_equal 2, subject.item_count
+    assert_equal [ 1, 1, 1 ], [ subject.flag_count, subject.order_count, subject.integrity_count ]
+    assert_equal 3, subject.item_count
   end
 
   test "leaves out quality reports, buyer-side orders, decided checks and banned people" do
@@ -70,9 +67,83 @@ class Admin::Fraud::SubjectQueueTest < ActiveSupport::TestCase
     assert_equal [ owner.id, teammate.id ].sort, ranked_ids.sort
   end
 
+  test "a person another reviewer is holding drops off the queue" do
+    held = user_with_flag(age: 10.days.ago, display_name: "held")
+    open = user_with_flag(age: 5.days.ago, display_name: "open")
+    holder = create_user(slack_id: "u-holder", display_name: "holder")
+    looker = create_user(slack_id: "u-looker", display_name: "looker")
+    FraudSubjectClaim.claim(held, holder)
+
+    assert_equal [ open.id ], ranked_ids_for(looker)
+    assert_equal [ held.id, open.id ], ranked_ids, "the unfiltered queue still has both"
+  end
+
+  test "a reviewer still sees the person they are holding themselves" do
+    mine = user_with_flag(age: 10.days.ago, display_name: "mine")
+    reviewer = create_user(slack_id: "u-mine", display_name: "minereviewer")
+    FraudSubjectClaim.claim(mine, reviewer)
+
+    assert_equal [ mine.id ], ranked_ids_for(reviewer)
+  end
+
+  test "a lapsed claim puts the person back on the queue" do
+    lapsed = user_with_flag(age: 10.days.ago, display_name: "lapsed")
+    holder = create_user(slack_id: "u-lapsed-holder", display_name: "lapsedholder")
+    looker = create_user(slack_id: "u-lapsed-looker", display_name: "lapsedlooker")
+    claim = FraudSubjectClaim.claim(lapsed, holder)
+    claim.update_columns(claimed_at: (FraudSubjectClaim::CLAIM_TTL + 1.minute).ago)
+
+    assert_equal [ lapsed.id ], ranked_ids_for(looker)
+  end
+
+  test "the next person skips both the one just finished and anyone held" do
+    finished = user_with_flag(age: 30.days.ago, display_name: "finished")
+    held = user_with_flag(age: 20.days.ago, display_name: "nextheld")
+    up_next = user_with_flag(age: 10.days.ago, display_name: "upnext")
+    reviewer = create_user(slack_id: "u-next", display_name: "nextreviewer")
+    holder = create_user(slack_id: "u-next-holder", display_name: "nextholder")
+    FraudSubjectClaim.claim(held, holder)
+
+    assert_equal up_next.id,
+                 Admin::Fraud::SubjectQueue.next_subject_id(reviewer: reviewer, after: finished)
+  end
+
+  test "an integrity check waits for the GOI to finish reviewing the ship" do
+    waiting = create_user(slack_id: "u-goi-waiting", display_name: "goiwaiting")
+    pending_integrity_for(waiting, age: 20.days.ago, goi: :pending)
+    returned = create_user(slack_id: "u-goi-returned", display_name: "goireturned")
+    pending_integrity_for(returned, age: 20.days.ago, goi: :returned)
+    unreviewed = create_user(slack_id: "u-goi-none", display_name: "goinone")
+    pending_integrity_for(unreviewed, age: 20.days.ago, goi: :none)
+    ready = user_with_integrity(age: 5.days.ago)
+
+    assert_equal [ ready.id ], ranked_ids
+    assert_empty Admin::Fraud::SubjectQueue.integrity_checks_for(waiting)
+    assert_empty Admin::Fraud::SubjectQueue.integrity_checks_for(returned)
+  end
+
+  test "a returned GOI review replaced by a completed one lets the check through" do
+    user = create_user(slack_id: "u-goi-redo", display_name: "goiredo")
+    check = pending_integrity_for(user, age: 3.days.ago, goi: :returned)
+    goi_review_for(check.ship_event, user: user, project: check.ship_event.post.project, state: :completed)
+
+    assert_equal [ user.id ], ranked_ids
+    assert_equal [ check ], Admin::Fraud::SubjectQueue.integrity_checks_for(user).to_a
+  end
+
+  test "someone waiting only on the GOI still shows for their other items" do
+    user = user_with_flag(age: 2.days.ago)
+    pending_integrity_for(user, age: 30.days.ago, goi: :pending)
+
+    subject = subjects.find { |row| row.user_id == user.id }
+    assert_equal [ 1, 0 ], [ subject.flag_count, subject.integrity_count ]
+  end
+
   private
 
   def subjects = Admin::Fraud::SubjectQueue.subjects
+
+  def ranked_ids_for(reviewer) = Admin::Fraud::SubjectQueue.subjects_for(reviewer).map(&:user_id)
 
   def ranked_ids = subjects.map(&:user_id)
 
@@ -110,14 +181,25 @@ class Admin::Fraud::SubjectQueueTest < ActiveSupport::TestCase
     user
   end
 
-  def pending_integrity_for(user, age:, status: :pending)
+  def pending_integrity_for(user, age:, status: :pending, goi: :completed)
     project = Project.create!(title: "Shipped #{SecureRandom.hex(4)}")
     Project::Membership.create!(project: project, user: user, role: :owner)
     ship_event = Post::ShipEvent.create!(body: "Ship it", uploading_attachments: true)
     Post.create!(project: project, user: user, postable: ship_event)
+    goi_review_for(ship_event, user: user, project: project, state: goi)
     check = Certification::Integrity.create!(ship_event: ship_event, status: status)
     check.update_column(:created_at, age)
     check
+  end
+
+  def goi_review_for(ship_event, user:, project:, state:)
+    return if state == :none
+
+    Certification::Ysws.create!(
+      user: user, project: project, post_ship_event: ship_event, original_minutes: 60,
+      reviewed_at: (Time.current if state == :completed),
+      returned_at: (Time.current if state == :returned)
+    )
   end
 
   def shop_item
