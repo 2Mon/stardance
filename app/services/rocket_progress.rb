@@ -48,24 +48,31 @@ module RocketProgress
 
   # The sum walks one row per review, so it's cached rather than run on every
   # home page render. A few minutes stale is fine for a 5000-hour goal.
-  CACHE_KEY = "rocket_progress/approved_hours"
+  CACHE_KEY = "rocket_progress/approved_minutes_by_user/v1"
   CACHE_TTL = 5.minutes
 
   # One reading of the goal. Everything a caller needs comes off a single
   # figure, so a render can't mix a fresh total with a stale remainder when the
   # cache expires between two questions.
-  Snapshot = Data.define(:hours, :goal_hours) do
+  Snapshot = Data.define(:hours, :goal_hours, :user_hours) do
     def remaining_hours = [ goal_hours - hours, 0 ].max.round(2)
     def percent = [ (hours / goal_hours.to_f * 100).round, 100 ].min
     def complete? = hours >= goal_hours
   end
 
   class << self
-    def snapshot = Snapshot.new(hours: hours, goal_hours: GOAL_HOURS)
+    def snapshot(user: nil)
+      minutes = approved_minutes_by_user
+      Snapshot.new(
+        hours: (minutes.values.sum / 60.0).round(2),
+        goal_hours: GOAL_HOURS,
+        user_hours: (minutes.fetch(user&.id, 0) / 60.0).round(2)
+      )
+    end
 
     # Hours banked so far, rounded the way the sync job rounds each submission.
     def hours
-      Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL) { approved_minutes / 60.0 }.round(2)
+      snapshot.hours
     end
 
     private
@@ -74,7 +81,15 @@ module RocketProgress
 
       # Net approved minutes per review, summed. Grouped in the database and
       # totalled here so the CASE/GREATEST arithmetic stays legible.
-      def approved_minutes
+      def approved_minutes_by_user
+        Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL) do
+          minutes_by_review.each_with_object({}) do |(user_id, minutes), totals|
+            totals[user_id] = totals.fetch(user_id, 0) + minutes
+          end
+        end
+      end
+
+      def minutes_by_review
         Certification::Ysws
           .joins(:user, :post_ship_event)
           .where(post_ship_events: { created_at: window })
@@ -83,8 +98,7 @@ module RocketProgress
           .group(:id)
           .having("COALESCE(SUM(certification_devlog_reviews.approved_minutes), 0) >= ?",
                   Certification::Ysws::MIN_APPROVED_MINUTES)
-          .pluck(Arel.sql(NET_MINUTES_SQL))
-          .sum
+          .pluck(:user_id, Arel.sql(NET_MINUTES_SQL))
       end
   end
 
