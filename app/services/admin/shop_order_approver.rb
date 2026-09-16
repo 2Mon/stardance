@@ -38,8 +38,6 @@ module Admin
     end
 
     def queue_for_next_step
-      old_state = order.aasm_state
-
       if order.shop_item.requires_verification_call?
         moved = order.queue_for_verification_call && order.save
         message = "Order ##{order.id} queued for verification call"
@@ -50,14 +48,6 @@ module Admin
       end
 
       return failure("Failed to approve order: #{order.errors.full_messages.join(', ')}") unless moved
-
-      ::PaperTrail::Version.create!(
-        item_type: "ShopOrder",
-        item_id: order.id,
-        event: "update",
-        whodunnit: actor.id,
-        object_changes: { aasm_state: [ old_state, order.aasm_state ] }
-      )
 
       success(message)
     end

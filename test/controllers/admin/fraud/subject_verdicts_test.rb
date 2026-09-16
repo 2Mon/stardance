@@ -168,6 +168,18 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
     assert_equal "awaiting_periodical_fulfillment", order.reload.aasm_state
   end
 
+  test "approving an order records its state change once, against the reviewer" do
+    order = pending_order
+
+    post approve_admin_shop_order_path(order),
+         params: { fraud_subject_id: @subject.id }, headers: TURBO_STREAM
+
+    assert_response :success
+    state_changes = order.versions.where(event: "update").select { |version| version.changeset.key?("aasm_state") }
+    assert_equal [ [ "pending", "awaiting_periodical_fulfillment" ] ], state_changes.map { |version| version.changeset["aasm_state"] }
+    assert_equal @admin.id.to_s, state_changes.first.whodunnit
+  end
+
   test "an integrity verdict cannot jump another reviewer's claim" do
     other = create_user(slack_id: "U_FRAUD_OTHER", display_name: "otherreviewer")
     check = pending_integrity_check
