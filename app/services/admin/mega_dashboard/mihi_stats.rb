@@ -10,10 +10,13 @@ module Admin
         dates = (@today - (@days - 1))..@today
         activations = MihiActivation.where(activated_on: dates)
         counts = activations.group(:activated_on).count
+        totals = activations.group(:activated_on).sum(:activations_count)
         {
           today: counts.fetch(@today, 0),
           unique_users: activations.distinct.count(:user_id),
-          daily: dates.to_h { |date| [ date.iso8601, counts.fetch(date, 0) ] }
+          total: totals.values.sum,
+          daily: dates.to_h { |date| [ date.iso8601, counts.fetch(date, 0) ] },
+          daily_totals: dates.to_h { |date| [ date.iso8601, totals.fetch(date, 0) ] }
         }
       end
     end
