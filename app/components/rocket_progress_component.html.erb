@@ -10,10 +10,26 @@
       </p>
     </div>
 
-    <%= render "shared/progress_bar",
-               value: hours,
-               max: goal,
-               label: "#{display_hours} of #{display_goal} hours logged toward fixing the rocket",
-               class_name: "rocket-progress__bar" %>
+    <div class="rocket-progress__meter" style="--rocket-progress-fill: <%= fill_percent %>%; --rocket-progress-contribution: <%= contribution_percent %>%">
+      <div class="progress-bar rocket-progress__bar"
+           role="progressbar"
+           aria-valuenow="<%= [hours, goal].min %>"
+           aria-valuemin="0"
+           aria-valuemax="<%= goal %>"
+           aria-label="<%= progress_label %>">
+        <div class="progress-bar__fill">
+          <% if contribution? %>
+            <span class="rocket-progress__contribution" aria-hidden="true"></span>
+          <% end %>
+        </div>
+      </div>
+      <% if contribution? %>
+        <div class="rocket-progress__contribution-caption">
+          <span class="rocket-progress__contribution-label">
+            <span aria-hidden="true">✦</span> You contributed <strong><%= display_contribution %> h</strong>
+          </span>
+        </div>
+      <% end %>
+    </div>
   </div>
 </section>

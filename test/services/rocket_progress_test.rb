@@ -80,6 +80,35 @@ class RocketProgressTest < ActiveSupport::TestCase
     assert RocketProgress.snapshot.complete?
   end
 
+  test "personal contribution uses the same deductions and window as the total" do
+    other = create_user(slack_id: "U_ROCKET_OTHER", display_name: "other", verified: true)
+    review = reviewed_ship(minutes: 180, at: @in_window)
+    deduct!(review, minutes: 30)
+    reviewed_ship(minutes: 60, at: @in_window)
+    reviewed_ship(minutes: 600, at: RocketProgress::WINDOW_START - 1.day)
+    reviewed_ship(minutes: 120, at: @in_window, user: other)
+
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      mine = RocketProgress.snapshot(user: @owner)
+      theirs = RocketProgress.snapshot(user: other)
+
+      assert_in_delta 5.5, mine.hours, 0.001
+      assert_in_delta 3.5, mine.user_hours, 0.001
+      assert_in_delta 2, theirs.user_hours, 0.001
+      assert_equal mine.hours, theirs.hours
+      assert_equal 0, RocketProgress.snapshot.user_hours
+    end
+  end
+
+  test "no contribution for a banned user or a review below the minimum" do
+    reviewed_ship(minutes: 5, at: @in_window)
+    assert_equal 0, RocketProgress.snapshot(user: @owner).user_hours
+
+    reviewed_ship(minutes: 120, at: @in_window)
+    @owner.update_columns(banned: true, banned_at: Time.current)
+    assert_equal 0, RocketProgress.snapshot(user: @owner).user_hours
+  end
+
   private
     # An approved YSWS review with one reviewed devlog, whose ship event was
     # posted (created_at) at `at` — the timestamp RocketProgress windows

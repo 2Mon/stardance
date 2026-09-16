@@ -65,6 +65,7 @@
   gap: var(--space-xs);
   // Starts where the chrome has fully faded back in.
   margin-left: var(--rocket-progress-gutter);
+  min-width: 0;
 }
 
 .rocket-progress__header {
@@ -112,11 +113,39 @@
   border: 2px solid var(--color-space-surface-soft);
 
   .progress-bar__fill {
-    background: linear-gradient(
-      90deg,
-      var(--color-brand-peach),
-      var(--color-brand-yellow)
-    );
+    position: relative;
+    width: var(--rocket-progress-fill);
+    overflow: hidden;
+    background: var(--color-brand-highlight);
+  }
+}
+
+.rocket-progress__contribution {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  width: var(--rocket-progress-contribution);
+  background: var(--color-brand-mint);
+  box-shadow: inset 2px 0 var(--color-set-2-bg);
+}
+
+.rocket-progress__contribution-caption {
+  display: flex;
+  justify-content: flex-end;
+  width: var(--rocket-progress-fill);
+  min-width: max-content;
+  max-width: 100%;
+  padding-top: var(--space-xs);
+}
+
+.rocket-progress__contribution-label {
+  color: var(--color-brand-mint);
+  font-size: var(--font-size-s);
+  line-height: 1.4;
+  white-space: nowrap;
+
+  strong {
+    font-weight: 700;
   }
 }
 
@@ -133,6 +162,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .rocket-progress__bar .progress-bar__fill {
+    transition: none;
+  }
+
   .rocket-progress:hover .rocket-progress__avatar {
     animation: none;
   }
