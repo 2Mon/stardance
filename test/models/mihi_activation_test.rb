@@ -4,11 +4,12 @@ require "test_helper"
 #
 # Table name: mihi_activations
 #
-#  id           :bigint           not null, primary key
-#  activated_on :date             not null
-#  created_at   :datetime         not null
-#  updated_at   :datetime         not null
-#  user_id      :bigint           not null
+#  id                :bigint           not null, primary key
+#  activated_on      :date             not null
+#  activations_count :integer          default(1), not null
+#  created_at        :datetime         not null
+#  updated_at        :datetime         not null
+#  user_id           :bigint           not null
 #
 # Indexes
 #
@@ -26,6 +27,7 @@ class MihiActivationTest < ActiveSupport::TestCase
     PaperTrail.request(whodunnit: user.id.to_s) do
       first = MihiActivation.record!(user: user, now: now)
       assert_equal first.id, MihiActivation.record!(user: user, now: now).id
+      assert_equal 2, first.reload.activations_count
       assert_equal Date.new(2026, 9, 16), first.activated_on
       assert_equal user.id.to_s, first.versions.last.whodunnit
       next_day = MihiActivation.record!(user: user, now: now + 2.minutes)
@@ -34,6 +36,8 @@ class MihiActivationTest < ActiveSupport::TestCase
     stats = Admin::MegaDashboard::MihiStats.new(period: "7", now: now + 2.minutes).to_h
     assert_equal 1, stats[:today]
     assert_equal 1, stats[:unique_users]
+    assert_equal 3, stats[:total]
+    assert_equal 2, stats[:daily_totals]["2026-09-16"]
     assert_equal 7, stats[:daily].size
     assert_equal 0, stats[:daily]["2026-09-15"]
     assert_equal 1, stats[:daily]["2026-09-16"]
