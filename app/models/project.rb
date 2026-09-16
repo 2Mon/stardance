@@ -413,7 +413,18 @@ class Project < ApplicationRecord
       now = Time.current
       update!(deleted_at: now)
 
-      hackatime_projects.update_all(project_id: nil, updated_at: now) unless shipped?
+      unless shipped?
+        # update_all skips PaperTrail, so each released key gets its own version.
+        released_ids = hackatime_projects.pluck(:id)
+        hackatime_projects.update_all(project_id: nil, updated_at: now)
+        released_ids.each do |hackatime_project_id|
+          PaperTrail::Version.create!(
+            item_type: "User::HackatimeProject", item_id: hackatime_project_id,
+            event: "released_by_project_deletion", whodunnit: PaperTrail.request.whodunnit,
+            object_changes: { project_id: [ id, nil ] }
+          )
+        end
+      end
 
       devlogs.find_each { |d| d.update_columns(deleted_at: now) }
 
