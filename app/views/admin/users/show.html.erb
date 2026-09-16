@@ -264,8 +264,10 @@
                 <%= text_area_tag :internal_rejection_reason, "", placeholder: "Detailed internal reason for these rejections...", required: true %>
               </div>
               <div>
-                <%= label_tag :fraud_related_project_id, "Related Project ID (required)" %>
-                <%= number_field_tag :fraud_related_project_id, nil, placeholder: "e.g. 1234", required: true, autocomplete: "off" %>
+                <%= label_tag :fraud_related_project_id, "Related project (required)" %>
+                <%= select_tag :fraud_related_project_id,
+                               options_for_select(fraud_related_project_options(@user)),
+                               include_blank: "Pick a project", required: true %>
               </div>
               <div>
                 <%= label_tag :joe_case_url, "Telescreen case URL (optional)" %>
