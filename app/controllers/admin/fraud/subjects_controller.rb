@@ -25,7 +25,7 @@ class Admin::Fraud::SubjectsController < Admin::ApplicationController
     @blocking_claim = FraudSubjectClaim.active.find_by(subject_id: @user.id) unless claim&.reviewer_id == current_user.id
 
     @flags = Admin::Fraud::SubjectQueue.flags_for(@user)
-    @orders = Admin::Fraud::SubjectQueue.orders_for(@user)
+    @orders = Admin::Fraud::SubjectQueue.orders_for(@user, reviewer: current_user)
     @integrity_checks = Admin::Fraud::SubjectQueue.integrity_checks_for(@user)
 
     approved_scope = @user.shop_orders.where(aasm_state: %w[awaiting_periodical_fulfillment fulfilled])
@@ -39,7 +39,13 @@ class Admin::Fraud::SubjectsController < Admin::ApplicationController
     @project_summaries = project_summaries_for(@user)
     @review_items = @flags.to_a + @orders.to_a + @integrity_checks.to_a
     @open_payout = FraudReviewPayout.unpaid.find_by(reviewer: current_user, subject: @user, completed_at: nil)
-    @next_subject_id = Admin::Fraud::SubjectQueue.next_subject_id(reviewer: current_user, after: @user) if @review_items.empty?
+
+    # Nothing here for this reviewer, though an order may still wait on a
+    # second one, so they let go rather than hold the person for an hour.
+    if @review_items.empty?
+      FraudSubjectClaim.release(@user, current_user)
+      @next_subject_id = Admin::Fraud::SubjectQueue.next_subject_id(reviewer: current_user, after: @user)
+    end
   end
 
   private

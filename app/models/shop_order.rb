@@ -343,7 +343,7 @@ class ShopOrder < ApplicationRecord
   end
 
   def requires_additional_review?
-    high_value? && reviews.count < 2
+    high_value? && reviews.size < ShopOrderReview::REQUIRED_COUNT
   end
 
   def approvable?

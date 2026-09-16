@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_11_141420) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_15_214500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -1309,11 +1309,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_141420) do
 
   create_table "shop_order_reviews", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.bigint "fraud_review_payout_id"
     t.text "reason", null: false
     t.bigint "shop_order_id", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.string "verdict", null: false
+    t.index ["fraud_review_payout_id"], name: "index_shop_order_reviews_on_fraud_review_payout_id"
     t.index ["shop_order_id", "user_id"], name: "index_shop_order_reviews_on_shop_order_id_and_user_id", unique: true
     t.index ["shop_order_id"], name: "index_shop_order_reviews_on_shop_order_id"
     t.index ["user_id"], name: "index_shop_order_reviews_on_user_id"
@@ -1912,6 +1914,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_141420) do
   add_foreign_key "shop_items", "users", column: "default_assigned_user_id", on_delete: :nullify
   add_foreign_key "shop_order_modifier_selections", "shop_item_modifiers"
   add_foreign_key "shop_order_modifier_selections", "shop_orders"
+  add_foreign_key "shop_order_reviews", "fraud_review_payouts"
   add_foreign_key "shop_order_reviews", "shop_orders"
   add_foreign_key "shop_order_reviews", "users"
   add_foreign_key "shop_orders", "fraud_review_payouts"

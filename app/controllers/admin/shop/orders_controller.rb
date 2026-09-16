@@ -457,6 +457,7 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
     success = false
     notice_message = nil
     alert_message = nil
+    review = nil
 
     @order.with_lock do
       previous_review_count = @order.reviews.count
@@ -490,8 +491,12 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
     end
 
     if success
+      return render_fraud_subject_review(review) if fraud_subject
+
       redirect_to admin_shop_order_path(@order), notice: notice_message
     else
+      return render_fraud_subject_item(@order, partial: "admin/fraud/subjects/order", error: alert_message) if fraud_subject
+
       redirect_to admin_shop_order_path(@order), alert: alert_message
     end
   end
@@ -694,6 +699,23 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
   # and swapped in place, rather than reloading the queue and paying nobody.
   # The per-order outcome shows on the row it settled, so only failures need a
   # flash of their own.
+  # A review from the fraud page is either the first of a high-value order's
+  # two, which pays the reviewer for that review and leaves the order waiting on
+  # someone else, or the one that completes it, which approves the order.
+  def render_fraud_subject_review(review)
+    @order.reviews.reset
+
+    if @order.requires_additional_review?
+      note = "Approval recorded (#{@order.reviews.size}/#{ShopOrderReview::REQUIRED_COUNT}). The order now waits on another reviewer."
+      return render_fraud_subject_verdict(@order, note, claim: review)
+    end
+
+    result = Admin::ShopOrderApprover.new(@order, actor: current_user).call
+    return render_fraud_subject_verdict(@order, result.message) if result.approved?
+
+    render_fraud_subject_item(@order, partial: "admin/fraud/subjects/order", error: result.message)
+  end
+
   def render_bulk_order_outcome(settled, failed, verb:)
     if fraud_subject
       flash.now[:alert] = bulk_order_failure_message(failed) if failed.any?
