@@ -82,7 +82,9 @@ class ShopOrder < ApplicationRecord
   belongs_to :assigned_to_user, class_name: "User", optional: true
   belongs_to :fraud_review_payout, optional: true, inverse_of: :shop_orders
   belongs_to :fulfillment_payout_line, optional: true
-  belongs_to :fraud_related_project, class_name: "Project", optional: true, foreign_key: :fraud_related_project_id, inverse_of: false
+  # Banned users' projects are usually soft-deleted by the time their orders are
+  # rejected, so a deleted project is still a valid thing to point at.
+  belongs_to :fraud_related_project, -> { with_deleted }, class_name: "Project", optional: true, foreign_key: :fraud_related_project_id, inverse_of: false
 
   # has_many :payouts, as: :payable, dependent: :destroy
 
@@ -657,7 +659,7 @@ class ShopOrder < ApplicationRecord
   end
 
   def fraud_related_project_exists
-    unless Project.exists?(fraud_related_project_id)
+    unless Project.with_deleted.exists?(fraud_related_project_id)
       errors.add(:fraud_related_project_id, "project ##{fraud_related_project_id} does not exist")
     end
   end

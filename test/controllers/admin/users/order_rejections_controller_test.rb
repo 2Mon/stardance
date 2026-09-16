@@ -20,6 +20,7 @@ class Admin::Users::OrderRejectionsControllerTest < ActionDispatch::IntegrationT
     )
     @item.image.attach(io: StringIO.new(Base64.decode64(PIXEL)), filename: "pixel.png", content_type: "image/png")
     @item.save!
+    @customer.update!(has_gotten_free_stickers: true) # clears the shop-tutorial gate
     @order = @customer.shop_orders.create!(
       shop_item: @item,
       quantity: 1,
@@ -44,6 +45,31 @@ class Admin::Users::OrderRejectionsControllerTest < ActionDispatch::IntegrationT
     assert_equal "Confirmed abuse", @order.internal_rejection_reason
     assert_equal @project, @order.fraud_related_project
     assert_equal "https://telescreen.hackclub.com/cases/123", @order.joe_case_url
+  end
+
+  test "rejects orders against a project the user has since deleted" do
+    @project.soft_delete!(force: true)
+    sign_in @admin
+
+    post admin_user_order_rejection_path(@customer), params: {
+      internal_rejection_reason: "Unbanning, clearing old orders first",
+      fraud_related_project_id: @project.id
+    }
+
+    assert_equal "Rejected 1 order(s) for #{@customer.display_name}.", flash[:notice]
+    assert_predicate @order.reload, :rejected?
+    assert_equal @project, @order.fraud_related_project
+  end
+
+  test "the reject form offers the user's deleted projects" do
+    Project::Membership.create!(project: @project, user: @customer, role: :owner)
+    @project.soft_delete!(force: true)
+    sign_in @admin
+
+    get admin_user_path(@customer)
+
+    assert_select "#reject-modal-orders select[name=fraud_related_project_id] option[value=?]", @project.id.to_s,
+                  text: "Fraud review (##{@project.id}, deleted)"
   end
 
   test "reports validation failures instead of claiming success" do

@@ -32,7 +32,9 @@ module Admin
     # they are loaded once per render rather than once per order.
     def fraud_related_project_options(user)
       @fraud_related_project_options ||= {}
-      @fraud_related_project_options[user.id] ||= user.projects.with_deleted.order(created_at: :desc).pluck(:title, :id)
+      @fraud_related_project_options[user.id] ||= user.projects.with_deleted.order(created_at: :desc)
+                                                      .pluck(:title, :id, :deleted_at)
+                                                      .map { |title, id, deleted_at| [ "#{title} (##{id}#{', deleted' if deleted_at})", id ] }
     end
   end
 end
