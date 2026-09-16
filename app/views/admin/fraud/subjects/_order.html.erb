@@ -1,5 +1,9 @@
 <%= turbo_frame_tag order do %>
   <div class="fraud-subject__item fraud-subject__item--order">
+    <% if local_assigns[:error].present? %>
+      <p class="fraud-subject__item-error" role="alert"><%= error %></p>
+    <% end %>
+
     <div class="fraud-subject__item-head">
       <span class="fraud-subject__item-title">
         <%= order.quantity %> × <%= order.shop_item.name %>
@@ -47,6 +51,27 @@
         <%= button_to "Approve", approve_admin_shop_order_path(order),
                       params: { fraud_subject_id: user.id },
                       class: "fraud-subject__verdict fraud-subject__verdict--accept" %>
+      <% end %>
+
+      <% if policy(order).review_order? && order.requires_additional_review? && order.user_id != current_user.id %>
+        <%# A high-value order needs two reviews with a written reason each. The
+            second one also approves it. %>
+        <details class="fraud-subject__second-review">
+          <summary class="fraud-subject__verdict fraud-subject__verdict--accept">
+            Approve (<%= order.reviews.size %>/<%= ShopOrderReview::REQUIRED_COUNT %> reviews)
+          </summary>
+
+          <%= form_with url: review_order_admin_shop_order_path(order), class: "fraud-subject__verdict-form" do |f| %>
+            <%= hidden_field_tag :fraud_subject_id, user.id %>
+            <%= hidden_field_tag :verdict, "approve", id: nil %>
+
+            <%= label_tag dom_id(order, :review_reason), "Why this order is fine", class: "fraud-subject__field-label" %>
+            <%= text_area_tag :review_reason, nil, id: dom_id(order, :review_reason), rows: 2, required: true,
+                              class: "fraud-subject__field" %>
+
+            <%= f.submit "Record approval", class: "fraud-subject__verdict fraud-subject__verdict--accept" %>
+          <% end %>
+        </details>
       <% end %>
 
       <% if policy(order).reject? %>

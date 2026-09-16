@@ -94,11 +94,11 @@
     {
       "warning_type": "SQL Injection",
       "warning_code": 0,
-      "fingerprint": "91921ae23d1e868773ebbcc68c806bfcf7bad2e1dc82bc61cceeaab7129ea148",
+      "fingerprint": "a07a0892f720f41469390f3fc629e9eaa3d06545e739f3532bf04f2202b6bdaf",
       "check_name": "SQL",
       "message": "Possible SQL injection",
       "file": "app/services/admin/fraud/subject_queue.rb",
-      "line": 29,
+      "line": 34,
       "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
       "code": null,
       "render_path": null,
@@ -112,7 +112,7 @@
       "cwe_id": [
         89
       ],
-      "note": "The interpolated subquery comes from private class methods only: frozen weight constants, literal kind names passed through connection.quote, and Arel-generated scope SQL. No caller can reach it with user input."
+      "note": "The interpolated subquery comes from private class methods only: frozen weight constants, literal kind names passed through connection.quote, and Arel-generated scope SQL, where the reviewer only reaches the query as a bound id. No caller can reach it with user input."
     },
     {
       "fingerprint": "160ee353d49154f06a9d66f7e7499992370cd6e087eda407ddabcd54f5ca48a3",

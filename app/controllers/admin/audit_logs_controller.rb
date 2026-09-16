@@ -79,6 +79,7 @@ module Admin
     ALLOWED_ITEM_CLASSES = {
       "User" => "User",
       "User::Identity" => "User::Identity",
+      "User::HackatimeProject" => "User::HackatimeProject",
       "Project" => "Project",
       "Project::Membership" => "Project::Membership",
       "Project::Report" => "Project::Report",
