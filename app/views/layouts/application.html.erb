@@ -67,7 +67,9 @@
     <%= Sentry.get_trace_propagation_meta.html_safe %> <%# erb_lint:disable ErbSafety %>
   </head>
 
-  <body class="<%= !@hide_sidebar ? 'signed-in' : '' %> <%= @body_class %> <%= 'streamer-mode' if session[:streamer_mode] %>">
+  <body class="<%= !@hide_sidebar ? 'signed-in' : '' %> <%= @body_class %> <%= 'streamer-mode' if session[:streamer_mode] %>"
+        data-controller="<%= 'mihi-mode' if current_user.present? && Flipper.enabled?(:mihimode, current_user) %>"
+        data-mihi-mode-image-url-value="<%= asset_path('mihi/portrait.jpg') %>">
     <% if @show_boot_splash %>
       <div class="app-loading" aria-hidden="true">
         <div class="app-loading__inner">

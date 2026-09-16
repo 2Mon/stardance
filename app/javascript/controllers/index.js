@@ -474,3 +474,6 @@ application.register("word-cycle", WordCycleController);
 
 import WorkshopCountdownController from "./workshop_countdown_controller";
 application.register("workshop-countdown", WorkshopCountdownController);
+
+import MihiModeController from "./mihi_mode_controller";
+application.register("mihi-mode", MihiModeController);
