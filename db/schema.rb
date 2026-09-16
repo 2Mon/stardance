@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_15_214500) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_16_193306) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -576,6 +576,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_15_214500) do
     t.bigint "user_id", null: false
     t.index ["sent_by_id"], name: "index_messages_on_sent_by_id"
     t.index ["user_id"], name: "index_messages_on_user_id"
+  end
+
+  create_table "mihi_activations", force: :cascade do |t|
+    t.date "activated_on", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["activated_on", "user_id"], name: "index_mihi_activations_on_activated_on_and_user_id", unique: true
+    t.index ["user_id"], name: "index_mihi_activations_on_user_id"
   end
 
   create_table "mission_guide_variants", force: :cascade do |t|
@@ -1840,6 +1849,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_15_214500) do
   add_foreign_key "lookout_sessions", "users"
   add_foreign_key "messages", "users"
   add_foreign_key "messages", "users", column: "sent_by_id"
+  add_foreign_key "mihi_activations", "users"
   add_foreign_key "mission_guide_variants", "missions"
   add_foreign_key "mission_memberships", "missions"
   add_foreign_key "mission_memberships", "users"

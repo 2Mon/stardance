@@ -77,6 +77,7 @@ module Admin
 
     # Map of allowed item types to their classes for safe lookup
     ALLOWED_ITEM_CLASSES = {
+      "MihiActivation" => "MihiActivation",
       "User" => "User",
       "User::Identity" => "User::Identity",
       "User::HackatimeProject" => "User::HackatimeProject",
