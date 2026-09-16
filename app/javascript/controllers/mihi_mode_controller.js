@@ -9,7 +9,7 @@ const mihify = (text) =>
 // Presentation only: preserve markup, link destinations, and form data.
 export default class extends Controller {
   static targets = ["toggle"];
-  static values = { imageUrl: String };
+  static values = { imageUrl: String, activationUrl: String };
 
   connect() {
     this.originals = new Map();
@@ -27,6 +27,18 @@ export default class extends Controller {
     this.enabled = true;
     this.refresh();
     this.updateButtons();
+    fetch(this.activationUrlValue, {
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+      headers: {
+        "X-CSRF-Token":
+          document.querySelector('meta[name="csrf-token"]')?.content || "",
+        Accept: "application/json",
+      },
+    }).catch(() => {
+      // Analytics failure must not prevent the visual effect.
+    });
   }
 
   toggleTargetConnected() {

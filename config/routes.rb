@@ -551,6 +551,7 @@ Rails.application.routes.draw do
   # Home
   get "home", to: "home#index"
   resources :feed_events, only: [ :create ]
+  resources :mihi_activations, only: [ :create ]
   resource :daily_roll, only: [ :create ]
   post "daily_roll/reroll", to: "daily_rolls#reroll", as: :reroll_daily_roll
   get "daily_roll/reroll_status", to: "daily_rolls#reroll_status", as: :reroll_status_daily_roll
