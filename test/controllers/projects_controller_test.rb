@@ -44,6 +44,37 @@ class ProjectsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Used AI to rubber-duck CSS.", @project.ai_declaration
   end
 
+  test "linking and unlinking a Hackatime key is recorded against the owner" do
+    key = User::HackatimeProject.create!(user: @owner, name: "forest-odyssey")
+    sign_in @owner
+
+    patch project_path(@project), params: { project: { title: "Forest Odyssey", hackatime_project_ids: [ key.id ] } }
+
+    assert_equal @project.id, key.reload.project_id
+
+    patch project_path(@project), params: { project: { title: "Forest Odyssey", hackatime_project_ids: [ "" ] } }
+
+    assert_nil key.reload.project_id
+
+    changes = key.versions.where(event: "update").to_h { |version| [ version.changeset["project_id"], version.whodunnit ] }
+    assert_equal @owner.id.to_s, changes[[ nil, @project.id ]], "the link is recorded against the owner"
+    assert_equal @owner.id.to_s, changes[[ @project.id, nil ]], "the unlink is recorded against the owner"
+  end
+
+  test "deleting a draft project records each Hackatime key it released" do
+    key = User::HackatimeProject.create!(user: @owner, name: "forest-odyssey")
+    key.update_columns(project_id: @project.id)
+    sign_in @owner
+
+    delete project_path(@project)
+
+    assert_nil key.reload.project_id
+    version = PaperTrail::Version.find_by!(item_type: "User::HackatimeProject", item_id: key.id.to_s,
+                                           event: "released_by_project_deletion")
+    assert_equal [ @project.id, nil ], version.object_changes["project_id"]
+    assert_equal @owner.id.to_s, version.whodunnit
+  end
+
   test "non-owner sees read-only project shell" do
     sign_in @viewer
 
