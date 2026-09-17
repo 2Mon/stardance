@@ -884,6 +884,7 @@ Rails.application.routes.draw do
     namespace :certification do
       # Integrity review queue — restricted to admins and fraud leads.
       get "integrity", to: "integrity#index", as: "integrity_reviews"
+      post "integrity/pass_all", to: "integrity#pass_all", as: "pass_all_integrity_reviews"
       get "integrity/:id", to: "integrity#show", as: "integrity_review"
       patch "integrity/:id", to: "integrity#update"
 

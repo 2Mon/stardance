@@ -252,6 +252,47 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
     assert_match "fraud-subject__progress-slot--done", response.body
   end
 
+  test "passing all checks settles every project and pays as passing them one at a time would" do
+    many = Project.create!(title: "Many ships")
+    Project::Membership.create!(project: many, user: @subject, role: :owner)
+    first, cascaded = 2.times.map { integrity_check_on(many) }
+    other = pending_integrity_check
+
+    post admin_certification_pass_all_integrity_reviews_path,
+         params: { fraud_subject_id: @subject.id, check_ids: [ first.id, cascaded.id, other.id ] }, headers: TURBO_STREAM
+
+    assert_response :success
+    [ first, cascaded, other ].each do |check|
+      assert_predicate check.reload, :manually_passed?
+      assert_equal @admin, check.reviewer
+      assert_match ActionView::RecordIdentifier.dom_id(check, :progress), response.body
+    end
+    assert_equal 2, FraudReviewPayout.find_by!(reviewer: @admin, subject: @subject).integrity_count,
+                 "the check the cascade settled earns nothing on top of the one that decided it"
+  end
+
+  test "passing all leaves a check another reviewer holds" do
+    held = pending_integrity_check
+    free = pending_integrity_check
+    Certification::Integrity.atomic_claim!(held.id, create_user(slack_id: "U_FRAUD_HOLDER", display_name: "holder"))
+
+    post admin_certification_pass_all_integrity_reviews_path,
+         params: { fraud_subject_id: @subject.id, check_ids: [ held.id, free.id ] }, headers: TURBO_STREAM
+
+    assert_response :success
+    assert_predicate held.reload, :pending?
+    assert_predicate free.reload, :manually_passed?
+    assert_match "Could not pass 1 check (##{held.id})", response.body
+  end
+
+  test "the integrity section offers to pass every check waiting" do
+    2.times { pending_integrity_check }
+
+    get admin_fraud_subject_path(@subject)
+
+    assert_select "form[action=?] button", admin_certification_pass_all_integrity_reviews_path, text: "Pass all 2 checks"
+  end
+
   test "a non-cascading verdict leaves the other checks' slots alone" do
     project = Project.create!(title: "Deducted ship")
     Project::Membership.create!(project: project, user: @subject, role: :owner)
