@@ -150,6 +150,11 @@ class ShopOrder < ApplicationRecord
   }
   scope :worth_counting, -> { where.not(aasm_state: %w[rejected refunded]) }
   scope :real, -> { without_item_type("ShopItem::FreeStickers") }
+  # Sticky Streak stickers clear review on their own and ship outside the batch
+  # sweep, and one 21-day run adds 21 of them per person, so counting them
+  # alongside the orders a human actually works buries that work. They still
+  # show up in the queues themselves; they just leave the numbers alone.
+  scope :without_streak_stickers, -> { without_item_type("ShopItem::StickyStreakSticker") }
   scope :manually_fulfilled, -> { joins(:shop_item).merge(ShopItem.where(type: ShopItem::MANUAL_FULFILLMENT_TYPES)) }
   scope :with_item_type, ->(item_type) { joins(:shop_item).where(shop_items: { type: item_type.to_s }) }
   scope :without_item_type, ->(item_type) { joins(:shop_item).where.not(shop_items: { type: item_type.to_s }) }
