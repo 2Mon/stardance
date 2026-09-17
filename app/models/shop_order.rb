@@ -348,6 +348,10 @@ class ShopOrder < ApplicationRecord
     high_value? && reviews.size < ShopOrderReview::REQUIRED_COUNT
   end
 
+  def fraud_review_state?
+    aasm_state.in?(FRAUD_REVIEW_STATES)
+  end
+
   def approvable?
     (pending? || awaiting_verification_call?) && !requires_additional_review?
   end
