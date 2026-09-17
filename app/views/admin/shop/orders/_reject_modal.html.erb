@@ -1,4 +1,4 @@
-<% records_fraud_details = Admin::ShopOrderRejector.records_fraud_details?(current_user) %>
+<% records_fraud_details = Admin::ShopOrderRejector.records_fraud_details?(order, current_user) %>
 <dialog id="reject-modal">
   <h2>Reject Order #<%= order.id %></h2>
 

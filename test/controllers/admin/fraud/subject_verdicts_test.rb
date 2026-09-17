@@ -366,6 +366,7 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
   end
 
   test "bulk rejection rejects every selected subject order and audits each verdict" do
+    @admin.grant_role!(:fraud_dept)
     order = pending_order
     project = Project.create!(title: "Fraud source")
 
@@ -400,6 +401,7 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
   end
 
   test "bulk rejecting from the subject page pays the reviewer for every order" do
+    @admin.grant_role!(:fraud_dept)
     orders = 2.times.map { pending_order }
     project = Project.create!(title: "Fraud source")
 
