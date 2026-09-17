@@ -53,8 +53,8 @@ module FraudSubjectVerdict
   # A bulk action settles a whole pile in one submission. Each item is swapped
   # and claimed exactly as it would have been one at a time, so the reviewer is
   # paid the same either way.
-  def render_fraud_subject_verdicts(settled)
-    render turbo_stream: fraud_subject_verdict_streams(settled)
+  def render_fraud_subject_verdicts(settled, refresh_integrity: false)
+    render turbo_stream: fraud_subject_verdict_streams(settled, refresh_integrity: refresh_integrity)
   end
 
   def fraud_subject_verdict_streams(settled, refresh_integrity: false, claims: nil)
@@ -70,7 +70,8 @@ module FraudSubjectVerdict
 
       # The siblings the cascade settled leave the list above on their own, but
       # their slots in the progress bar would sit there still waiting.
-      Admin::Fraud::SubjectQueue.cascaded_siblings_of(records.first, user: fraud_subject).each do |sibling|
+      siblings = records.flat_map { |record| Admin::Fraud::SubjectQueue.cascaded_siblings_of(record, user: fraud_subject).to_a }
+      siblings.uniq.each do |sibling|
         streams << turbo_stream.replace(
           ActionView::RecordIdentifier.dom_id(sibling, :progress),
           partial: "admin/fraud/subjects/progress_slot",
