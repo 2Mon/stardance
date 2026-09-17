@@ -33,13 +33,6 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
     { label: "Streak Stickers", hidden_by_default: false, types: %w[ShopItem::StickyStreakSticker] }
   ].freeze
 
-  # Sticky Streak stickers clear review on their own and ship outside the batch
-  # sweep, and one 21-day run adds 21 of them per person, so counting them
-  # alongside the orders a human actually works buries that work. They stay in
-  # the queue below and keep their own toggle count; they just leave the
-  # headline numbers alone.
-  STATS_EXCLUDED_ITEM_TYPES = %w[ShopItem::StickyStreakSticker].freeze
-
   TOGGLEABLE_ITEM_TYPES = ITEM_TYPE_TOGGLES.flat_map { |toggle| toggle[:types] }.freeze
 
   DEFAULT_HIDDEN_ITEM_TYPES = ITEM_TYPE_TOGGLES.select { |toggle| toggle[:hidden_by_default] }
@@ -166,8 +159,9 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
 
     # Apply shared filters to both the orders query and the stats base query
     orders = apply_shared_filters(orders)
-    base = apply_shared_filters(ShopOrder.includes(:shop_item, :user))
-             .where.not(shop_item_id: ShopItem.where(type: STATS_EXCLUDED_ITEM_TYPES))
+    # Streak stickers stay in the queue below and keep their own toggle count;
+    # they just leave the headline numbers alone.
+    base = apply_shared_filters(ShopOrder.includes(:shop_item, :user).without_streak_stickers)
 
     # Folded-away item types only come off the list itself — the stats below and
     # the counts on the toggles stay whole so nothing vanishes silently.
