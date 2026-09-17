@@ -558,6 +558,29 @@ class Admin::Fraud::SubjectVerdictsTest < ActionDispatch::IntegrationTest
     assert_no_match "Release hold", response.body
   end
 
+  test "a released hold puts the order back on offer to the bulk approve button" do
+    order = pending_order
+    order.update_columns(aasm_state: "on_hold")
+
+    post release_from_hold_admin_shop_order_path(order),
+         params: { fraud_subject_id: @subject.id }, headers: TURBO_STREAM
+
+    assert_response :success
+    assert_match "fraud-subject-order-bulk-actions", response.body
+    assert_match "Approve all 1 order", response.body
+  end
+
+  test "an order placed on hold stops being offered by the bulk approve button" do
+    pending_order
+    held = pending_order
+
+    post place_on_hold_admin_shop_order_path(held),
+         params: { fraud_subject_id: @subject.id }, headers: TURBO_STREAM
+
+    assert_response :success
+    assert_match "Approve all 1 order", response.body
+  end
+
   private
 
   def pending_order

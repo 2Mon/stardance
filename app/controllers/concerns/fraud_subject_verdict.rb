@@ -96,11 +96,7 @@ module FraudSubjectVerdict
 
     # A settled order leaves the bulk buttons offering work that is no longer
     # there, so they are re-read alongside the counts.
-    streams << turbo_stream.replace(
-      "fraud-subject-order-bulk-actions",
-      partial: "admin/fraud/subjects/order_bulk_actions",
-      locals: { user: fraud_subject }
-    )
+    streams << fraud_subject_order_bulk_actions_stream
 
     records.each do |record|
       streams << turbo_stream.replace(
@@ -177,13 +173,26 @@ module FraudSubjectVerdict
   end
 
   # For a change that leaves the item in the queue, like putting an order on
-  # hold: the row is re-rendered in place rather than swapped for a note.
+  # hold: the row is re-rendered in place rather than swapped for a note. The
+  # bulk buttons go with it, because a hold taken off is an order "Approve all"
+  # must start offering again.
   def render_fraud_subject_item(record, partial:, **locals)
-    render turbo_stream: turbo_stream.replace(
-      ActionView::RecordIdentifier.dom_id(record),
-      partial: partial,
-      object: record,
-      locals: { user: fraud_subject, **locals }
+    render turbo_stream: [
+      turbo_stream.replace(
+        ActionView::RecordIdentifier.dom_id(record),
+        partial: partial,
+        object: record,
+        locals: { user: fraud_subject, **locals }
+      ),
+      fraud_subject_order_bulk_actions_stream
+    ]
+  end
+
+  def fraud_subject_order_bulk_actions_stream
+    turbo_stream.replace(
+      "fraud-subject-order-bulk-actions",
+      partial: "admin/fraud/subjects/order_bulk_actions",
+      locals: { user: fraud_subject }
     )
   end
 end
