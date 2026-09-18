@@ -22,10 +22,10 @@ module Admin
       end
     end
 
-    # This reviewer gave their half of a two-approval order, so it is finished
+    # This reviewer gave their half of a two-review order, so it is finished
     # for them even though it stays open for someone else.
     def fraud_review_passed_on?(order)
-      order.reviews.any? { |review| review.user_id == current_user.id } && order.requires_additional_review?
+      order.reviews.any? { |review| review.user_id == current_user.id } && order.awaiting_another_review?
     end
 
     # The bulk form and every order's reject form offer the same projects, so

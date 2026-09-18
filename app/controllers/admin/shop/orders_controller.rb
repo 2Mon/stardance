@@ -427,7 +427,7 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
       redirect_back fallback_location: admin_shop_orders_path, alert: "No orders to reject." and return
     end
 
-    settled, failed = orders.map { |order|
+    settled, undecided = orders.map { |order|
       Admin::ShopOrderRejector.new(
         order,
         actor: current_user,
@@ -438,7 +438,9 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
       ).call
     }.partition(&:rejected?)
 
-    render_bulk_order_outcome(settled, failed, verb: "Rejected")
+    voted, failed = undecided.partition(&:review)
+
+    render_bulk_order_outcome(settled, failed, verb: "Rejected", voted: voted)
   end
 
   def review_order
@@ -448,51 +450,20 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
       redirect_to admin_shop_order_path(@order), alert: "You cannot review your own order." and return
     end
 
-    success = false
-    notice_message = nil
-    alert_message = nil
-    review = nil
+    review = @order.record_review(user: current_user, verdict: params[:verdict], reason: params[:review_reason])
 
-    @order.with_lock do
-      previous_review_count = @order.reviews.count
-
-      review = @order.reviews.build(
-        user: current_user,
-        verdict: params[:verdict],
-        reason: params[:review_reason]
-      )
-
-      if review.save
-        new_review_count = previous_review_count + 1
-
-        ::PaperTrail::Version.create!(
-          item_type: "ShopOrder",
-          item_id: @order.id,
-          event: "review",
-          whodunnit: current_user.id,
-          object_changes: {
-            review_count: [ previous_review_count, new_review_count ],
-            verdict: review.verdict,
-            reason: review.reason
-          }
-        )
-
-        success = true
-        notice_message = "Review submitted — #{review.verdict} (#{new_review_count}/2)."
-      else
-        alert_message = review.errors.full_messages.to_sentence
-      end
-    end
-
-    if success
-      return render_fraud_subject_review(review) if fraud_subject
-
-      redirect_to admin_shop_order_path(@order), notice: notice_message
-    else
+    unless review.persisted?
+      alert_message = review.errors.full_messages.to_sentence
       return render_fraud_subject_item(@order, partial: "admin/fraud/subjects/order", error: alert_message) if fraud_subject
 
-      redirect_to admin_shop_order_path(@order), alert: alert_message
+      return redirect_to admin_shop_order_path(@order), alert: alert_message
     end
+
+    return render_fraud_subject_review(review) if fraud_subject
+
+    redirect_to admin_shop_order_path(@order),
+                notice: "Review submitted - #{review.verdict} " \
+                        "(#{@order.review_count(review.verdict)}/#{ShopOrderReview::REQUIRED_COUNT})."
   end
 
   def reject
@@ -511,6 +482,10 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
       return render_fraud_subject_verdict(@order, result.message) if fraud_subject
 
       redirect_to shop_orders_return_path, notice: result.message
+    elsif result.review
+      return render_fraud_subject_verdict(@order, result.message, claim: result.review) if fraud_subject
+
+      redirect_to admin_shop_order_path(@order), notice: result.message
     else
       redirect_to admin_shop_order_path(@order), alert: result.message
     end
@@ -693,33 +668,54 @@ class Admin::Shop::OrdersController < Admin::ApplicationController
   # and swapped in place, rather than reloading the queue and paying nobody.
   # The per-order outcome shows on the row it settled, so only failures need a
   # flash of their own.
-  # A review from the fraud page is either the first of a high-value order's
-  # two, which pays the reviewer for that review and leaves the order waiting on
-  # someone else, or the one that completes it, which approves the order.
+  # A review from the fraud page is either one of a high-value order's two,
+  # which pays the reviewer for that review and leaves the order waiting on
+  # someone else, or the approval that completes the pair, which approves the
+  # order. A completed pair of rejections stops at the vote: the rejection
+  # itself needs the reasons the reject form collects.
   def render_fraud_subject_review(review)
     @order.reviews.reset
 
-    if @order.requires_additional_review?
-      note = "Approval recorded (#{@order.reviews.size}/#{ShopOrderReview::REQUIRED_COUNT}). The order now waits on another reviewer."
-      return render_fraud_subject_verdict(@order, note, claim: review)
+    if review.verdict == ShopOrderReview::APPROVE && !@order.requires_additional_review?(ShopOrderReview::APPROVE)
+      result = Admin::ShopOrderApprover.new(@order, actor: current_user).call
+      return render_fraud_subject_verdict(@order, result.message) if result.approved?
+
+      return render_fraud_subject_item(@order, partial: "admin/fraud/subjects/order", error: result.message)
     end
 
-    result = Admin::ShopOrderApprover.new(@order, actor: current_user).call
-    return render_fraud_subject_verdict(@order, result.message) if result.approved?
-
-    render_fraud_subject_item(@order, partial: "admin/fraud/subjects/order", error: result.message)
+    render_fraud_subject_verdict(@order, fraud_subject_review_note(review), claim: review)
   end
 
-  def render_bulk_order_outcome(settled, failed, verb:)
+  def fraud_subject_review_note(review)
+    tally = "(#{@order.review_count(review.verdict)}/#{ShopOrderReview::REQUIRED_COUNT})"
+    recorded = review.verdict == ShopOrderReview::APPROVE ? "Approval" : "Rejection"
+
+    return "#{recorded} recorded #{tally}. The order now waits on another reviewer." if @order.requires_additional_review?(review.verdict)
+
+    "#{recorded} recorded #{tally}. The order can now be rejected."
+  end
+
+  # `voted` holds the high-value orders the submission could only vote on. They
+  # settle nothing, but the reviewer is paid for each vote and the rows they
+  # leave behind have to say so, exactly as a single verdict would.
+  def render_bulk_order_outcome(settled, failed, verb:, voted: [])
     if fraud_subject
       flash.now[:alert] = bulk_order_failure_message(failed) if failed.any?
 
-      return render_fraud_subject_verdicts(settled.map { |result| [ result.order, result.message ] })
+      decided = settled + voted
+      return render_fraud_subject_verdicts(
+        decided.map { |result| [ result.order, result.message ] },
+        claims: settled.map(&:order) + voted.map(&:review)
+      )
     end
 
     if settled.any?
       flash[:notice] = "#{verb} #{helpers.pluralize(settled.size, 'order')}: " \
                        "#{settled.map { |result| "##{result.order.id}" }.to_sentence}"
+    end
+    if voted.any?
+      flash[:notice] = [ flash[:notice], "Recorded a rejection on #{helpers.pluralize(voted.size, 'order')} " \
+                                         "waiting on a second reviewer: #{voted.map { |result| "##{result.order.id}" }.to_sentence}" ].compact.join(" ")
     end
     flash[:alert] = bulk_order_failure_message(failed) if failed.any?
 

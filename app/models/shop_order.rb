@@ -349,8 +349,47 @@ class ShopOrder < ApplicationRecord
       total_cost_with_modifiers > HIGH_VALUE_THRESHOLD
   end
 
-  def requires_additional_review?
-    high_value? && reviews.size < ShopOrderReview::REQUIRED_COUNT
+  def review_count(verdict)
+    reviews.count { |review| review.verdict == verdict }
+  end
+
+  # Verdicts are counted apart: two approvals do not clear a rejection, and a
+  # split decision clears neither, so a third reviewer breaks the tie.
+  def requires_additional_review?(verdict = ShopOrderReview::APPROVE)
+    high_value? && review_count(verdict) < ShopOrderReview::REQUIRED_COUNT
+  end
+
+  # Neither verdict has carried, so the order cannot move until someone else
+  # weighs in. The mirror of ShopOrderReview.awaiting_another_reviewer.
+  def awaiting_another_review?
+    requires_additional_review?(ShopOrderReview::APPROVE) && requires_additional_review?(ShopOrderReview::REJECT)
+  end
+
+  # One reviewer's verdict on a high-value order, with the audit entry the
+  # order page and the fraud dashboard read back. Returns the review, carrying
+  # its errors when it could not be recorded.
+  def record_review(user:, verdict:, reason:)
+    with_lock do
+      previous_count = reviews.count
+      review = reviews.build(user: user, verdict: verdict, reason: reason)
+
+      if review.save
+        ::PaperTrail::Version.create!(
+          item_type: "ShopOrder",
+          item_id: id,
+          event: "review",
+          whodunnit: user.id,
+          object_changes: {
+            review_count: [ previous_count, previous_count + 1 ],
+            verdict: review.verdict,
+            reason: review.reason
+          }
+        )
+        reviews.reset
+      end
+
+      review
+    end
   end
 
   def fraud_review_state?
