@@ -405,6 +405,15 @@
     font-weight: 600;
   }
 
+  // Lifetime hours are context for the ship's claim, so they trail the lead
+  // number at label size instead of competing with it.
+  .fraud-subject__vital-aside {
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    margin-left: var(--space-xxs);
+  }
+
   .fraud-subject__blurb {
     margin: 0;
     max-width: 68ch;
