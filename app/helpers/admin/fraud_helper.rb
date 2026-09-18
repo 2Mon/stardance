@@ -28,6 +28,17 @@ module Admin
       order.reviews.any? { |review| review.user_id == current_user.id } && order.awaiting_another_review?
     end
 
+    # LedgerEntriesHelper links a reason at the reader's own pages, which on a
+    # fraud review would send the reviewer to their own shop or achievements.
+    # Only the project behind a payout is worth a link here, and it goes to the
+    # admin view of it.
+    def fraud_ledger_reason(entry)
+      project = entry.ledgerable.is_a?(::Post::ShipEvent) ? entry.ledgerable.post&.project : nil
+      return entry.reason unless project
+
+      link_to entry.reason, admin_project_path(project), data: { turbo_frame: "_top" }
+    end
+
     # The bulk form and every order's reject form offer the same projects, so
     # they are loaded once per render rather than once per order.
     def fraud_related_project_options(user)

@@ -727,7 +727,10 @@ Rails.application.routes.draw do
       # One page per person with fraud work waiting: reports and shop orders are
       # ranked by whoever has waited longest on the thing that matters most.
       # Integrity checks remain supporting context on the subject page.
-      resources :subjects, only: [ :index, :show ]
+      resources :subjects, only: [ :index, :show ] do
+        # The subject's own stardust ledger, pulled into the page on demand.
+        resource :balance, only: [ :show ], controller: "subjects/balances"
+      end
     end
 
     # Referral raffle management (reads the Raffle engine's models).
