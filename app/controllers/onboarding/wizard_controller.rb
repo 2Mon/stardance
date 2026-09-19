@@ -258,7 +258,7 @@ class Onboarding::WizardController < ApplicationController
     return unless current_user.slack_id.present?
     return if current_user.hardware_channel_invited_at.present?
 
-    InviteToSlackChannelJob.perform_later(current_user.id, Certification::Reviewable::HARDWARE_REVIEW_CHANNEL)
+    InviteToSlackChannelJob.perform_later(current_user.id, Certification::Reviewable::HARDWARE_INVITE_CHANNELS)
   end
 
   def signup_referral_code
