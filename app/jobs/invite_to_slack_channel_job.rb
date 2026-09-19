@@ -6,7 +6,7 @@ class InviteToSlackChannelJob < ApplicationJob
     return unless user&.slack_id.present?
     return if user.hardware_channel_invited_at.present?
 
-    client = Slack::Web::Client.new(token: Rails.application.credentials.dig(:slack, :bot_token))
+    client = Slack::Web::Client.new(token: slack_admin_token)
     client.conversations_invite(channel: channel_id, users: user.slack_id)
     user.update_column(:hardware_channel_invited_at, Time.current)
   rescue Slack::Web::Api::Errors::SlackError => e
@@ -15,5 +15,11 @@ class InviteToSlackChannelJob < ApplicationJob
     else
       Rails.logger.error("InviteToSlackChannelJob failed for user #{user_id}: #{e.message}")
     end
+  end
+
+  private
+
+  def slack_admin_token
+    Rails.application.credentials.dig(:slack, :admin_token) || ENV["SLACK_ADMIN_TOKEN"]
   end
 end
