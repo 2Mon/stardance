@@ -4,7 +4,9 @@ module Certification
 
     CLAIM_TTL = 30.minutes
     HARDWARE_REVIEW_CHANNEL = "C0BPN8XPSPN"
+    HARDWARE_GENERAL_CHANNEL = "C0BPUM5N3RR"
     HARDWARE_APPROVAL_FEED_CHANNEL = "C0BUR6M0ZQT"
+    HARDWARE_INVITE_CHANNELS = [ HARDWARE_REVIEW_CHANNEL, HARDWARE_GENERAL_CHANNEL ].freeze
 
     # A reviewer's actual verdicts. The queue-routing corrections (misfiled,
     # withdrawn) are not decisions: they earn no bounty, stamp no decided_at,
@@ -125,7 +127,7 @@ module Certification
       return unless owner&.slack_id.present?
       return if owner.hardware_channel_invited_at.present?
 
-      InviteToSlackChannelJob.perform_later(owner.id, HARDWARE_REVIEW_CHANNEL)
+      InviteToSlackChannelJob.perform_later(owner.id, HARDWARE_INVITE_CHANNELS)
     end
 
     def post_approval_to_hardware_feed!
