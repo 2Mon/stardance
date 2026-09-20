@@ -940,6 +940,19 @@ Rails.application.routes.draw do
         end
       end
 
+      # The T2 (second stage) hardware queue: submissions already approved at T1
+      # and waiting on a second pair of eyes before anything is paid out.
+      resources :second_stage_reviews, path: "t2", only: [ :index, :show, :update ] do
+        collection do
+          get :design
+          get :build
+          get :next
+        end
+        member do
+          post :claim
+        end
+      end
+
       # Reviewer-only internal notes about a project, shared across its funding
       # and ship reviews and shown on the hardware review page. Append-only.
       resources :projects, only: [] do
