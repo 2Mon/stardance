@@ -61,6 +61,7 @@ module Certification
     self.table_name = "certification_funding_requests"
 
     include Certification::Reviewable
+    include Certification::SecondStageGated
     include Mission::PrizeRedeemable
 
     belongs_to :project
@@ -292,9 +293,19 @@ module Certification
     end
 
     # True when approving this request pays out an HCB card grant, as opposed to
-    # shipping a kit or approving the build with no funding at all.
+    # shipping a kit or approving the build with no funding at all. Says what
+    # the approval *owes*, not whether it may be paid yet - deliberately blind
+    # to the second stage, because approved_without_grant? is its negation and
+    # a request parked in the T2 queue is not the same thing as one approved
+    # with no funding.
     def issues_grant?
       approved? && !awards_design_kit? && final_amount_cents.to_i.positive?
+    end
+
+    # True when that grant may actually be issued now. The T1 approval only
+    # promises the money; a T2 reviewer has to clear it before HCB is called.
+    def grant_payable?
+      issues_grant? && second_stage_cleared?
     end
 
     # An approval that funds nothing: the project moves to the build stage, but
@@ -385,7 +396,7 @@ module Certification
     before_save :stamp_decided_at,
       if: -> { will_save_change_to_status? && status_change&.last.in?(DECIDED_STATUSES) && decided_at.nil? }
     before_save :assign_stardust_earned,
-      if: -> { will_save_change_to_status? && status_change&.last.in?(DECIDED_STATUSES) && reviewer_id.present? }
+      if: -> { !releasing_second_stage && will_save_change_to_status? && status_change&.last.in?(DECIDED_STATUSES) && reviewer_id.present? }
     after_save :apply_verdict_to_project!, if: :saved_change_to_status?
     # Notify first. The verdict message only states what already happened (the
     # request was approved, the project moved to build) and never claims a card
@@ -396,10 +407,16 @@ module Certification
     # so a grant that failed (an expired HCB token is a live failure mode here)
     # retries the next time the request is saved instead of being stranded.
     # issue_hcb_grant! already returns early when a grant exists.
-    after_save_commit :notify_owner!, if: -> { saved_change_to_status? && decided? }
-    after_save_commit :post_verdict_to_hardware_review_channel!, if: -> { saved_change_to_status? && decided? }
-    after_save_commit :post_approval_to_hardware_feed!, if: -> { saved_change_to_status? && approved? }
-    after_save_commit :issue_hcb_grant!, if: -> { issues_grant? && hcb_grant_hashid.blank? && latest_for_project? }
+    #
+    # Every approval-side effect below also waits on second_stage_cleared?: with
+    # the T2 stage on, a T1 approval is a recommendation, not a payout, so the
+    # builder isn't told they're approved and no card is issued until a T2
+    # reviewer clears it. Releasing the second stage re-runs them (see
+    # run_deferred_approval_effects!). Returns are unaffected and notify at once.
+    after_save_commit :notify_owner!, if: -> { saved_change_to_status? && decided? && (!approved? || second_stage_cleared?) }
+    after_save_commit :post_verdict_to_hardware_review_channel!, if: -> { saved_change_to_status? && decided? && (!approved? || second_stage_cleared?) }
+    after_save_commit :post_approval_to_hardware_feed!, if: -> { saved_change_to_status? && approved? && second_stage_cleared? }
+    after_save_commit :issue_hcb_grant!, if: -> { grant_payable? && hcb_grant_hashid.blank? && latest_for_project? }
     after_create_commit :post_submission_to_hardware_review_channel!
 
     def queue_mismatch_flagged_label = "design funding"
@@ -503,6 +520,10 @@ module Certification
     def apply_verdict_to_project!
       return unless decided?
       return unless latest_for_project?
+      # An approval parked in the T2 queue leaves the project where it is: the
+      # builder only moves to the build stage once the second stage clears.
+      return if approved? && !second_stage_cleared?
+
       project.with_lock do
         case status.to_sym
         when :approved
@@ -512,6 +533,18 @@ module Certification
           # owner is notified; no project change
         end
       end
+    end
+
+    # Fired by Certification::SecondStageReview on a T2 approval: runs the
+    # payout effects held back at T1, in the same order the T1 callbacks would
+    # have run them. latest_for_project? is re-checked here because a resubmit
+    # can supersede this request while it sits in the T2 queue.
+    def run_deferred_approval_effects!
+      apply_verdict_to_project!
+      notify_owner!
+      post_verdict_to_hardware_review_channel!
+      post_approval_to_hardware_feed!
+      issue_hcb_grant! if grant_payable? && hcb_grant_hashid.blank? && latest_for_project?
     end
 
     def issue_hcb_grant!

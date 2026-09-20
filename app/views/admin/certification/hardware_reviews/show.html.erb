@@ -26,6 +26,15 @@
         <% if @active_review %>
           <span class="hardware-review__tag"><%= stage_label %></span>
         <% end %>
+        <%# Where an approval on this page goes next. Only shown to the people who
+            can act on it, and only once a second stage actually exists. %>
+        <% second_stage = @active_review&.respond_to?(:second_stage_review) ? @active_review.second_stage_review : nil %>
+        <% if second_stage && Flipper.enabled?(:hardware_t2_review, current_user) &&
+              (current_user&.has_role?(:t2_reviewer) || current_user&.admin?) %>
+          <%= link_to "T2: #{second_stage.status.to_s.titleize} ↗",
+                admin_certification_second_stage_review_path(second_stage),
+                class: "hardware-review__tag" %>
+        <% end %>
       </div>
 
       <% if @active_review %>

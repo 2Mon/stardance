@@ -1,0 +1,236 @@
+<% content_for :title, "T2 review — #{@project.title}" %>
+<% design = @review.stage == "design" %>
+
+<div class="app-layout app-layout--wide">
+  <div class="app-layout__main app-layout__main--wide t2-review">
+    <%= link_to "Back to the T2 queue", queue_path_for(@review.stage), class: "ship-queue__back" %>
+
+    <header class="t2-review__header">
+      <div>
+        <h1 class="t2-review__title"><%= @project.title %></h1>
+        <p class="t2-review__subtitle">
+          <%= @review.stage_label %> second stage ·
+          submitted by <%= @owner&.display_name %>
+        </p>
+      </div>
+      <%= link_to "Open project", project_path(@project),
+            class: "action-btn action-btn--secondary", target: "_blank", rel: "noopener" %>
+    </header>
+
+    <%# What the second reviewer is actually checking: the first reviewer's call. %>
+    <section class="t2-review__set t2-review__set--first-stage">
+      <h2 class="t2-review__set-title">The T1 verdict you're checking</h2>
+      <dl class="t2-review__facts">
+        <div class="t2-review__fact">
+          <dt>T1 reviewer</dt>
+          <dd><%= @first_stage_reviewer&.display_name || "—" %></dd>
+        </div>
+        <div class="t2-review__fact">
+          <dt>Decided</dt>
+          <dd><%= @reviewable.decided_at ? l(@reviewable.decided_at, format: :long) : "—" %></dd>
+        </div>
+        <% if design %>
+          <div class="t2-review__fact">
+            <dt>Tier</dt>
+            <dd><%= @reviewable.tier_label %></dd>
+          </div>
+          <div class="t2-review__fact">
+            <dt>Requested</dt>
+            <dd>$<%= @reviewable.requested_amount_dollars %></dd>
+          </div>
+          <div class="t2-review__fact t2-review__fact--emphasis">
+            <dt>Approved at T1</dt>
+            <dd>
+              <% if @reviewable.issues_grant? %>
+                $<%= @reviewable.final_amount_dollars %>
+              <% elsif @reviewable.awards_design_kit? %>
+                Design kit
+              <% else %>
+                Approved, no funding
+              <% end %>
+            </dd>
+          </div>
+        <% end %>
+      </dl>
+
+      <% if @reviewable.feedback.present? %>
+        <div class="t2-review__feedback">
+          <h3 class="t2-review__feedback-title">T1 feedback to the builder</h3>
+          <p class="t2-review__feedback-body"><%= simple_format(@reviewable.feedback) %></p>
+        </div>
+      <% end %>
+    </section>
+
+    <%# Project context: who built it, how much work is behind it, where it lives. %>
+    <section class="t2-review__set t2-review__set--context">
+      <h2 class="t2-review__set-title">Project</h2>
+      <dl class="t2-review__facts">
+        <div class="t2-review__fact">
+          <dt>Builder</dt>
+          <dd><%= @owner&.display_name || "—" %></dd>
+        </div>
+        <div class="t2-review__fact">
+          <dt>Devlogs</dt>
+          <dd><%= @devlog_count %></dd>
+        </div>
+        <div class="t2-review__fact">
+          <dt>Hours logged</dt>
+          <dd><%= @project.total_ship_hours.round(1) %>h</dd>
+        </div>
+        <div class="t2-review__fact">
+          <dt>Waiting at T2</dt>
+          <dd><%= ((Time.current - @review.created_at) / 1.day).floor %>d</dd>
+        </div>
+        <% if @project.repo_url.present? %>
+          <div class="t2-review__fact t2-review__fact--wide">
+            <dt>Repo</dt>
+            <dd><%= link_to @project.repo_url, @project.repo_url, target: "_blank", rel: "noopener" %></dd>
+          </div>
+        <% end %>
+      </dl>
+    </section>
+
+    <%# The history the T1 reviewer had in front of them. A project that has been
+        returned before is exactly what a second pair of eyes is here to catch. %>
+    <% if @prior_reviews.any? %>
+      <section class="t2-review__set t2-review__set--history">
+        <h2 class="t2-review__set-title">
+          Earlier reviews <span class="t2-review__count"><%= @prior_reviews.size %></span>
+        </h2>
+        <ol class="t2-review__history">
+          <% @prior_reviews.each do |prior| %>
+            <li class="t2-review__history-item">
+              <div class="t2-review__history-head">
+                <span class="t2-review__history-stage">
+                  <%= prior.is_a?(::Certification::FundingRequest) ? "Design" : "Build" %>
+                </span>
+                <span class="t2-review__history-verdict t2-review__history-verdict--<%= prior.status %>">
+                  <%= prior.status.to_s.titleize %>
+                </span>
+                <span class="t2-review__history-by">
+                  <%= prior.reviewer&.display_name || "—" %>
+                  <% if prior.decided_at %>· <%= l(prior.decided_at.to_date, format: :long) %><% end %>
+                </span>
+              </div>
+              <% if prior.feedback.present? %>
+                <p class="t2-review__history-feedback"><%= simple_format(prior.feedback) %></p>
+              <% end %>
+            </li>
+          <% end %>
+        </ol>
+      </section>
+    <% end %>
+
+    <%# Reviewer-to-reviewer notes on the project (not shown to the builder). %>
+    <% if @review_notes.any? %>
+      <section class="t2-review__set t2-review__set--notes">
+        <h2 class="t2-review__set-title">
+          Reviewer notes <span class="t2-review__count"><%= @review_notes.size %></span>
+        </h2>
+        <ul class="t2-review__notes">
+          <% @review_notes.each do |note| %>
+            <li class="t2-review__note">
+              <div class="t2-review__note-head">
+                <span class="t2-review__note-author"><%= note.author&.display_name || "—" %></span>
+                <span class="t2-review__note-date"><%= l(note.created_at.to_date, format: :long) %></span>
+              </div>
+              <p class="t2-review__note-body"><%= simple_format(note.body) %></p>
+            </li>
+          <% end %>
+        </ul>
+      </section>
+    <% end %>
+
+    <% if design && @reviewable.issues_grant? %>
+      <p class="t2-review__stakes">
+        Clearing this issues a $<%= @reviewable.final_amount_dollars %> HCB grant
+        and moves the project to the build stage.
+      </p>
+    <% elsif !design %>
+      <p class="t2-review__stakes">
+        Clearing this certifies the build, creates the YSWS review and releases
+        any after-ship prizes.
+      </p>
+    <% end %>
+
+    <% if @review.decided? %>
+      <section class="t2-review__set t2-review__set--decided">
+        <h2 class="t2-review__set-title">
+          Already <%= @review.approved? ? "cleared" : "returned" %>
+        </h2>
+        <p>
+          by <%= @review.reviewer&.display_name || "—" %>
+          on <%= l(@review.decided_at, format: :long) %>
+        </p>
+        <% if @review.feedback.present? %>
+          <p class="t2-review__feedback-body"><%= simple_format(@review.feedback) %></p>
+        <% end %>
+      </section>
+    <% elsif !@review.claim_held_by?(current_user) %>
+      <%# Opening a review is browsing; claiming it is committing to decide it,
+          so the verdict form stays closed until this reviewer holds the claim. %>
+      <section class="t2-review__set t2-review__set--claim">
+        <h2 class="t2-review__set-title">Claim this review to decide it</h2>
+        <p class="t2-review__claim-note">
+          <% if @review.reviewer.present? && !@review.claim_expired? %>
+            Currently claimed by <%= @review.reviewer.display_name %>.
+          <% else %>
+            Nobody is holding this one right now.
+          <% end %>
+        </p>
+        <%= button_to "Claim this review",
+              claim_admin_certification_second_stage_review_path(@review),
+              method: :post,
+              class: "action-btn action-btn--large action-btn--primary" %>
+      </section>
+    <% else %>
+      <section class="t2-review__set t2-review__set--verdict">
+        <h2 class="t2-review__set-title">Your verdict</h2>
+
+        <%= form_with model: @review,
+              url: admin_certification_second_stage_review_path(@review),
+              method: :patch,
+              scope: :certification_second_stage_review,
+              class: "t2-review__form" do |f| %>
+
+          <fieldset class="t2-review__verdicts">
+            <legend class="t2-review__legend">Decision</legend>
+
+            <label class="t2-review__verdict">
+              <%= f.radio_button :verdict, "approved", required: true %>
+              <span class="t2-review__verdict-label">
+                Clear it
+                <span class="t2-review__verdict-hint">
+                  <%= design ? "Issue the grant and move to build" : "Certify the build" %>
+                </span>
+              </span>
+            </label>
+
+            <label class="t2-review__verdict">
+              <%= f.radio_button :verdict, "returned", required: true %>
+              <span class="t2-review__verdict-label">
+                Return it
+                <span class="t2-review__verdict-hint">
+                  Send it back to the builder. Nothing is paid out.
+                </span>
+              </span>
+            </label>
+          </fieldset>
+
+          <div class="t2-review__field">
+            <%= f.label :feedback, "Feedback for the builder", class: "t2-review__label" %>
+            <%= f.text_area :feedback, rows: 5, class: "t2-review__textarea",
+                  placeholder: "Shown to the builder if you return this." %>
+          </div>
+
+          <div class="t2-review__field">
+            <%= f.label :internal_reason, "Internal note (reviewers only)", class: "t2-review__label" %>
+            <%= f.text_area :internal_reason, rows: 3, class: "t2-review__textarea" %>
+          </div>
+
+          <%= f.submit "Record verdict", class: "action-btn action-btn--large action-btn--primary" %>
+        <% end %>
+      </section>
+    <% end %>
+  </div>
+</div>

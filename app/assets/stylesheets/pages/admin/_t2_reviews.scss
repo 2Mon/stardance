@@ -1,0 +1,375 @@
+// T2 (second stage) hardware review queue and verdict page.
+//
+// Leans on the shared .ship-queue / .hardware-queue chrome for the page frame
+// and only styles what is specific to the second stage: the "nothing is paid
+// out yet" framing, the T1 verdict being checked, and the verdict form.
+
+.t2-queue {
+  &__note {
+    margin: 0 0 var(--spacing-m, 1rem);
+    padding: 0.75rem 1rem;
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-brand-yellow-soft);
+    color: var(--color-space-text);
+    font-family: var(--font-family-text);
+    font-size: var(--font-size-s);
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__item {
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-set-2-bg);
+  }
+
+  &__link {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.9rem 1.1rem;
+    color: var(--color-space-text);
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--color-brand-blue-soft);
+    }
+  }
+
+  &__main {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+
+  &__project {
+    font-family: var(--font-family-text);
+    font-size: var(--font-size-l);
+    font-weight: 600;
+  }
+
+  &__stage-pill {
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--color-brand-lilac-soft);
+    color: var(--color-brand-lilac);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-s);
+  }
+
+  &__amount {
+    color: var(--color-brand-mint);
+    font-weight: 600;
+  }
+
+  &__empty {
+    padding: 2rem 0;
+    color: var(--color-set-1-fg-secondary);
+    text-align: center;
+  }
+}
+
+.t2-review {
+  &__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  &__title {
+    margin: 0;
+    font-family: var(--font-family-text);
+    font-size: var(--font-size-xxxl);
+  }
+
+  &__subtitle {
+    margin: 0.25rem 0 0;
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-s);
+  }
+
+  &__set {
+    margin-bottom: 1.25rem;
+    padding: 1.1rem 1.25rem;
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-set-2-bg);
+
+    &--first-stage {
+      border-left: 3px solid var(--color-brand-blue);
+    }
+
+    &--decided {
+      border-left: 3px solid var(--color-brand-mint);
+    }
+
+    &--claim {
+      border-left: 3px solid var(--color-brand-peach);
+    }
+
+    &--context {
+      border-left: 3px solid var(--color-brand-lilac);
+    }
+
+    &--history {
+      border-left: 3px solid var(--color-brand-yellow);
+    }
+
+    &--notes {
+      border-left: 3px solid var(--color-brand-salmon);
+    }
+  }
+
+  &__count {
+    margin-left: 0.35rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: var(--color-space-surface-faint);
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+
+  &__history {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  &__history-item {
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-space-surface-faint);
+  }
+
+  &__history-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: var(--font-size-s);
+  }
+
+  &__history-stage {
+    font-weight: 600;
+  }
+
+  &__history-verdict {
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    &--approved {
+      background: var(--color-brand-mint-soft);
+      color: var(--color-brand-mint);
+    }
+
+    &--returned {
+      background: var(--color-brand-salmon-soft);
+      color: var(--color-brand-salmon);
+    }
+  }
+
+  &__history-by {
+    color: var(--color-set-3-fg-secondary);
+  }
+
+  &__history-feedback {
+    margin: 0.45rem 0 0;
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-s);
+  }
+
+  &__notes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  &__note {
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-space-surface-faint);
+  }
+
+  &__note-head {
+    display: flex;
+    gap: 0.6rem;
+    font-size: var(--font-size-xs);
+    color: var(--color-set-3-fg-secondary);
+  }
+
+  &__note-author {
+    font-weight: 600;
+    color: var(--color-space-text);
+  }
+
+  &__note-body {
+    margin: 0.35rem 0 0;
+    font-size: var(--font-size-s);
+  }
+
+  &__claim-note {
+    margin: 0 0 0.85rem;
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-s);
+  }
+
+  &__set-title {
+    margin: 0 0 0.85rem;
+    font-family: var(--font-family-text);
+    font-size: var(--font-size-l);
+    font-weight: 600;
+  }
+
+  &__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.9rem;
+    margin: 0;
+  }
+
+  &__fact {
+    dt {
+      color: var(--color-set-3-fg-secondary);
+      font-size: var(--font-size-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    dd {
+      margin: 0.2rem 0 0;
+      font-size: var(--font-size-m);
+    }
+
+    &--emphasis dd {
+      color: var(--color-brand-mint);
+      font-weight: 600;
+    }
+  }
+
+  &__feedback {
+    margin-top: 1rem;
+  }
+
+  &__feedback-title {
+    margin: 0 0 0.35rem;
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__feedback-body {
+    margin: 0;
+    font-size: var(--font-size-s);
+  }
+
+  // The one line on the page that says what clearing actually costs.
+  &__stakes {
+    margin: 0 0 1.25rem;
+    padding: 0.8rem 1rem;
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-brand-salmon-soft);
+    color: var(--color-space-text);
+    font-size: var(--font-size-s);
+  }
+
+  &__verdicts {
+    margin: 0 0 1rem;
+    padding: 0;
+    border: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  &__legend {
+    padding: 0;
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__verdict {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-space-surface-faint);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--color-space-surface-soft);
+    }
+  }
+
+  &__verdict-label {
+    display: flex;
+    flex-direction: column;
+    font-weight: 600;
+  }
+
+  &__verdict-hint {
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+
+  &__field {
+    margin-bottom: 1rem;
+  }
+
+  &__label {
+    display: block;
+    margin-bottom: 0.3rem;
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__textarea {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--color-space-border);
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-set-1-bg);
+    color: var(--color-space-text);
+    font-family: var(--font-family-text);
+    font-size: var(--font-size-s);
+    resize: vertical;
+  }
+}
