@@ -25,8 +25,13 @@ class Admin::Certification::HardwareReviewPolicy < ApplicationPolicy
     index?
   end
 
+  # Second-stage reviewers can read this page too: they're checking the T1
+  # verdict recorded here, so the devlogs, recordings and review history are
+  # exactly the context they need. Read-only - recording a T1 verdict goes
+  # through FundingRequestPolicy/ShipPolicy#update?, which still require
+  # can_review?, so viewing grants no power to decide the first stage.
   def show?
-    user&.can_review? && not_own_project?
+    (user&.can_review? || user&.has_role?(:t2_reviewer)) && not_own_project?
   end
 
   # Same bar as Certification::ShipPolicy#report_fraud?: any reviewer may flag,

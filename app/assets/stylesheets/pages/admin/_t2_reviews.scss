@@ -373,3 +373,53 @@
     resize: vertical;
   }
 }
+
+// The T2 handoff banner on the T1 hardware review page: where an approval on
+// that page went, and the way through to it for a second-stage reviewer.
+.hardware-review {
+  &__second-stage {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 1rem 0;
+    padding: 0.85rem 1.1rem;
+    border-radius: var(--container-radius, 8px);
+    background: var(--color-space-surface-faint);
+    border-left: 3px solid var(--color-brand-blue);
+
+    &--pending {
+      border-left-color: var(--color-brand-yellow);
+      background: var(--color-brand-yellow-soft);
+    }
+
+    &--approved {
+      border-left-color: var(--color-brand-mint);
+      background: var(--color-brand-mint-soft);
+    }
+
+    &--returned {
+      border-left-color: var(--color-brand-salmon);
+      background: var(--color-brand-salmon-soft);
+    }
+  }
+
+  &__second-stage-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  &__second-stage-title {
+    font-family: var(--font-family-text);
+    font-size: var(--font-size-m);
+    font-weight: 600;
+  }
+
+  &__second-stage-note {
+    color: var(--color-set-3-fg-secondary);
+    font-size: var(--font-size-s);
+  }
+}

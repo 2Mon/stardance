@@ -228,6 +228,13 @@ module HardwareReviewQueue
       when ::Certification::FundingRequest then :funding
       when ::Certification::Ship then :ship
       end
+    # The second stage opened by a T1 approval on this project, if any. Read off
+    # the latest reviews rather than off @active_review: a T1 approval is no
+    # longer pending, so @active_review is nil in exactly the case where the
+    # second stage exists and a T2 reviewer needs a way through to it.
+    @second_stage_review = [ @funding_request, @ship ].compact
+      .filter_map { |review| review.second_stage_review if review.respond_to?(:second_stage_review) }
+      .max_by(&:created_at)
     @past_reviews = past_reviews
     load_undo_context
     @review_notes = @project.review_notes.order(created_at: :desc)
