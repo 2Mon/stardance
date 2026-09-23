@@ -159,6 +159,15 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
       internal_reason: params.dig(:certification_second_stage_review, :internal_reason)
     )
 
+    # Only an approval can move money, so a figure typed next to a return is
+    # discarded rather than stored against a verdict that pays nothing. And
+    # only a grant T1 already approved can be adjusted: T2 doesn't fund a
+    # request T1 approved without funding.
+    if verdict == "approved" && @review.stage == "design" && @review.reviewable.issues_grant?
+      @review.approved_amount_dollars =
+        params.dig(:certification_second_stage_review, :approved_amount_dollars)
+    end
+
     if @review.save
       # After the save: attaching to a persisted record writes straight away, so
       # attaching first would keep the photos on a verdict that failed to save.

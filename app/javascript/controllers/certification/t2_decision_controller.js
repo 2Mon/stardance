@@ -9,8 +9,8 @@ import { Controller } from "@hotwired/stimulus";
 // The keyboard layer lives in review_shortcuts_controller and drives this by
 // clicking the same buttons a mouse would, so there is one path to a verdict.
 export default class extends Controller {
-  static targets = ["feedback", "approve", "return", "confirm", "confirmText"];
-  static values = { approveText: String, returnText: String };
+  static targets = ["feedback", "approve", "return", "confirm", "confirmText", "amount"];
+  static values = { approveText: String, grantText: String, returnText: String };
 
   approve(event) {
     event.preventDefault();
@@ -37,9 +37,18 @@ export default class extends Controller {
 
     if (this.hasConfirmTextTarget) {
       this.confirmTextTarget.textContent =
-        verdict === "approved" ? this.approveTextValue : this.returnTextValue;
+        verdict === "approved" ? this.approveText() : this.returnTextValue;
     }
     if (this.hasConfirmTarget) this.confirmTarget.showModal();
+  }
+
+  // A typed override is what HCB will be asked for, so the confirmation names
+  // that figure rather than the T1 one the page was rendered with.
+  approveText() {
+    if (!this.hasAmountTarget || !this.grantTextValue) return this.approveTextValue;
+
+    const amount = this.amountTarget.value || this.amountTarget.placeholder;
+    return this.grantTextValue.replace("%{amount}", amount);
   }
 
   cancel() {

@@ -263,6 +263,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_211544) do
   end
 
   create_table "certification_second_stage_reviews", force: :cascade do |t|
+    t.integer "approved_amount_cents"
     t.datetime "claim_expires_at"
     t.datetime "claimed_at"
     t.datetime "created_at", null: false

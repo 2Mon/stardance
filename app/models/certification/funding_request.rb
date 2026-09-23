@@ -299,8 +299,19 @@ module Certification
     # a request parked in the T2 queue is not the same thing as one approved
     # with no funding.
     def issues_grant?
-      approved? && !awards_design_kit? && final_amount_cents.to_i.positive?
+      approved? && !awards_design_kit? && payable_amount_cents.to_i.positive?
     end
+
+    # What HCB is actually asked for. A T2 reviewer may clear the design at a
+    # different figure than T1 approved; when they do, theirs is the one that
+    # gets paid. Kept separate from final_amount_cents so the T1 number stays
+    # readable as what T1 decided - the T2 page shows both, and PaperTrail has
+    # each on its own record.
+    def payable_amount_cents
+      second_stage_review&.approved_amount_cents || final_amount_cents
+    end
+
+    def payable_amount_dollars = (payable_amount_cents || 0) / 100
 
     # True when that grant may actually be issued now. The T1 approval only
     # promises the money; a T2 reviewer has to clear it before HCB is called.
@@ -553,7 +564,7 @@ module Certification
       owner = project.memberships.owner.first&.user || user
       grant = HCBService.create_card_grant(
         email: owner.grant_email,
-        amount_cents: final_amount_cents,
+        amount_cents: payable_amount_cents,
         # HCB caps the purpose at 30 chars, so key it off the project id (short
         # and stable) rather than the title, which would get chopped.
         purpose: "Hardware grant, project #{project.id}".truncate(30),

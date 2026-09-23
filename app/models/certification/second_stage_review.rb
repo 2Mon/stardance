@@ -1,3 +1,35 @@
+# == Schema Information
+#
+# Table name: certification_second_stage_reviews
+#
+#  id                    :bigint           not null, primary key
+#  approved_amount_cents :integer
+#  claim_expires_at      :datetime
+#  claimed_at            :datetime
+#  decided_at            :datetime
+#  feedback              :text
+#  internal_reason       :text
+#  lock_version          :integer          default(0), not null
+#  reviewable_type       :string           not null
+#  stardust_earned       :integer
+#  status                :integer          default(0), not null
+#  created_at            :datetime         not null
+#  updated_at            :datetime         not null
+#  reviewable_id         :bigint           not null
+#  reviewer_id           :bigint
+#
+# Indexes
+#
+#  idx_second_stage_reviews_on_status_claim_expires         (status,claim_expires_at)
+#  index_certification_second_stage_reviews_on_decided_at   (decided_at)
+#  index_certification_second_stage_reviews_on_reviewable   (reviewable_type,reviewable_id)
+#  index_certification_second_stage_reviews_on_reviewer_id  (reviewer_id)
+#  index_second_stage_reviews_unique_reviewable             (reviewable_type,reviewable_id) UNIQUE
+#
+# Foreign Keys
+#
+#  fk_rails_...  (reviewer_id => users.id)
+#
 module Certification
   # The second (T2) stage of a hardware review.
   #
@@ -54,6 +86,16 @@ module Certification
     # left blank, the builder would get a return carrying T1's approving note.
     validates :feedback, presence: true, if: :returned?
     validates :reviewable_type, inclusion: { in: %w[Certification::FundingRequest Certification::Ship] }
+
+    # A T2 override of the grant. Left nil, the T1 figure is paid; set, this one
+    # is (see Certification::FundingRequest#payable_amount_cents). Only the
+    # design stage pays a grant at all, so a figure on a build review would be
+    # money that never moves - reject it rather than store it misleadingly.
+    validates :approved_amount_cents,
+              numericality: { only_integer: true, greater_than_or_equal_to: 0 },
+              allow_nil: true
+    validate :amount_only_on_design_stage
+    validate :amount_within_tier_max
 
     # Reviewable's claim/queue machinery works off the project and owner behind
     # the submission, so both the policy's own-project guard and the queue joins
@@ -132,8 +174,8 @@ module Certification
     # approved. Idempotent on the unique reviewable index: a re-approval after
     # an undo rewinds the existing row to pending rather than stacking a new
     # one, so the queue never shows the same submission twice. The earlier
-    # verdict's notes and bounty are cleared with it, so the fresh review starts
-    # clean.
+    # verdict's amount and notes are cleared with it, so the fresh review
+    # doesn't open with the last one's override already in the form.
     def self.open_for!(reviewable)
       record = find_or_initialize_by(reviewable: reviewable)
       record.assign_attributes(
@@ -142,6 +184,7 @@ module Certification
         claimed_at: nil,
         claim_expires_at: nil,
         decided_at: nil,
+        approved_amount_cents: nil,
         feedback: nil,
         internal_reason: nil,
         stardust_earned: nil
@@ -156,6 +199,16 @@ module Certification
     # The T1 reviewer whose approval opened this stage, shown on the T2 page so
     # the second reviewer knows whose call they're checking.
     def first_stage_reviewer = reviewable.reviewer
+
+    # Dollars in and out of the form: reviewers think in dollars, HCB is called
+    # in cents, and a blank field means "pay what T1 approved".
+    def approved_amount_dollars
+      approved_amount_cents ? approved_amount_cents / 100 : nil
+    end
+
+    def approved_amount_dollars=(value)
+      self.approved_amount_cents = value.presence && (value.to_d * 100).to_i
+    end
 
     def verdict = decided? ? status : nil
 
@@ -185,6 +238,23 @@ module Certification
     def queue_mismatch_suggested_label = "first stage"
 
     private
+
+    def amount_only_on_design_stage
+      return if approved_amount_cents.blank? || stage == "design"
+
+      errors.add(:approved_amount_cents, "only applies to a design review")
+    end
+
+    # The same ceiling T1 is held to (FundingRequest#approved_within_tier_max):
+    # the override replaces T1's figure, so it can't be a way around the cap.
+    def amount_within_tier_max
+      return if approved_amount_cents.blank? || stage != "design"
+
+      max = reviewable.tier_max_cents
+      return if max.nil? || approved_amount_cents <= max
+
+      errors.add(:approved_amount_cents, "exceeds the #{reviewable.tier_label} maximum of $#{reviewable.tier_max_dollars}")
+    end
 
     def stamp_claimed_at
       self.claimed_at = Time.current

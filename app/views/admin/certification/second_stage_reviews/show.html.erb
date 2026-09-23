@@ -5,13 +5,17 @@
 <% content_for :title, "T2 review — #{@project.title}" %>
 <% design = @review.stage == "design" %>
 <% claimed_by_me = @review.claim_held_by?(current_user) %>
+<%# Only a grant T1 already approved can be adjusted here: T2 can change the
+    figure or return the request, not fund one T1 approved without funding. %>
+<% grant_adjustable = design && @reviewable.issues_grant? %>
 <%
   # What clearing this actually costs, reused by the stakes panel and the
-  # approve confirmation so the two can never say different things.
+  # approve confirmation so the two can never say different things. %{amount}
+  # is filled in by the confirmation with whatever figure is in the form.
+  grant_stakes = "Clearing this issues a $%{amount} HCB grant and moves the project to the build stage."
   approve_stakes =
-    if design && @reviewable.issues_grant?
-      "Clearing this issues a $#{@reviewable.final_amount_dollars} HCB grant " \
-        "and moves the project to the build stage."
+    if grant_adjustable
+      format(grant_stakes, amount: @reviewable.payable_amount_dollars)
     elsif !design
       "Clearing this certifies the build, creates the YSWS review and releases " \
         "any after-ship prizes."
@@ -273,6 +277,7 @@
               data: {
                 controller: "certification--t2-decision",
                 "certification--t2-decision-approve-text-value": approve_stakes,
+                "certification--t2-decision-grant-text-value": (grant_stakes if grant_adjustable),
                 "certification--t2-decision-return-text-value":
                   "This sends the submission back to the builder. Nothing is paid out."
               } do |f| %>
@@ -291,6 +296,29 @@
             <%= f.file_field :feedback_images, multiple: true,
                   accept: "image/*", class: "review-cockpit__file-input" %>
           </div>
+
+          <% if grant_adjustable %>
+            <div class="review-cockpit__panel">
+              <%= f.label :approved_amount_dollars, "Grant amount", class: "review-cockpit__label" %>
+              <%# Blank pays what T1 approved; a figure here overrides it, and
+                  is what HCB is actually asked for. %>
+              <div class="review-cockpit__amount">
+                <span class="review-cockpit__amount-prefix">$</span>
+                <%= f.number_field :approved_amount_dollars, min: 0, step: 1,
+                      max: @reviewable.tier_max_dollars,
+                      value: @review.approved_amount_dollars,
+                      placeholder: @reviewable.final_amount_dollars,
+                      class: "review-cockpit__amount-input",
+                      data: { "certification--t2-decision-target": "amount" } %>
+              </div>
+              <p class="review-cockpit__hint">
+                Leave blank to pay the $<%= @reviewable.final_amount_dollars %> T1 approved.
+                <% if (tier_max = @reviewable.tier_max_dollars) %>
+                  <%= @reviewable.tier_label %> max is $<%= tier_max %>.
+                <% end %>
+              </p>
+            </div>
+          <% end %>
 
           <div class="review-cockpit__panel">
             <%# The radios carry the verdict; the buttons and the shortcuts both
