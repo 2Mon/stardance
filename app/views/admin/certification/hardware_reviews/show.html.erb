@@ -36,7 +36,7 @@
       <%# Where a T1 approval on this project went next. Shown to everyone so a
           T1 reviewer can see their approval is parked rather than paid, with the
           way through only for the people who can actually decide it. %>
-      <% if @second_stage_review && Flipper.enabled?(:hardware_t2_review, current_user) %>
+      <% if @second_stage_review && Flipper.enabled?(:hardware_t2_review) %>
         <% can_review_t2 = current_user&.has_role?(:t2_reviewer) || current_user&.admin? %>
         <div class="hardware-review__second-stage hardware-review__second-stage--<%= @second_stage_review.status %>">
           <div class="hardware-review__second-stage-text">

@@ -8,7 +8,7 @@
 # (HCB grant, ship certification cascade) is fired by that model, not here, so
 # PaperTrail and the deferred callbacks stay attached to the review records.
 class Admin::Certification::SecondStageReviewsController < Admin::Certification::ApplicationController
-  before_action -> { head :not_found unless Flipper.enabled?(:hardware_t2_review, current_user) }
+  before_action -> { head :not_found unless Flipper.enabled?(:hardware_t2_review) }
   before_action :set_review, only: [ :show, :update, :claim ]
   before_action :set_body_class
 
@@ -55,7 +55,7 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
   # the T1 claim (Admin::Certification::FundingRequests::ClaimsController):
   # opening a review is browsing, claiming it is committing to decide it.
   def claim
-    authorize @review, :show?
+    authorize @review
 
     ::Certification::SecondStageReview.release_all_for(current_user)
     claimed = ::Certification::SecondStageReview.atomic_claim!(@review.id, current_user)

@@ -9,14 +9,20 @@ class Admin::Certification::SecondStageReviewPolicy < ApplicationPolicy
   def design? = index?
   def build? = index?
   def next? = index?
-  def skip? = index?
 
   def show? = second_stage_reviewer? && not_own_project?
 
+  # Taking the review to decide it. Same bar as deciding, minus the claim: the
+  # T1 reviewer whose call this checks can't hold it, or they'd block everyone
+  # else from it until the claim expired.
+  def claim? = second_stage_reviewer? && not_own_project? && not_own_first_stage?
+
   # Recording the T2 verdict: the reviewer must hold the claim, must not be the
   # T1 reviewer whose call they're checking, and must not be on the project.
+  # Pending only - a decided review keeps its claim fields, and re-deciding one
+  # would return a submission whose payout has already gone out.
   def update?
-    return false unless second_stage_reviewer? && not_own_project? && not_own_first_stage?
+    return false unless record.pending? && claim?
 
     record.claim_held_by?(user) || (record.reviewer_id == user.id && record.claim_expired?)
   end

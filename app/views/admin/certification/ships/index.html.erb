@@ -34,11 +34,6 @@
             class: "action-btn action-btn--large action-btn--secondary" %>
         <%= link_to "Hardware queue", admin_certification_hardware_reviews_path,
             class: "action-btn action-btn--large action-btn--secondary" %>
-        <%# Only the second-stage reviewers who can act on it see the T2 queue. %>
-        <% if Flipper.enabled?(:hardware_t2_review, current_user) && (current_user&.has_role?(:t2_reviewer) || current_user&.admin?) %>
-          <%= link_to "T2 queue", design_admin_certification_second_stage_reviews_path,
-              class: "action-btn action-btn--large action-btn--secondary" %>
-        <% end %>
         <% if @internal_sw_dash_reviews_disabled %>
           <%= link_to "Open review dashboard", ExternalDashboard::Client.base_url,
               target: "_blank", rel: "noopener",

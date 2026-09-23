@@ -44,6 +44,9 @@ module Certification
     VERDICTS = %w[approved returned].freeze
 
     validates :feedback, length: { maximum: 10_000 }, allow_blank: true
+    # A return replaces the T1 feedback the builder sees, so it has to say why:
+    # left blank, the builder would get a return carrying T1's approving note.
+    validates :feedback, presence: true, if: :returned?
     validates :reviewable_type, inclusion: { in: %w[Certification::FundingRequest Certification::Ship] }
 
     # Reviewable's claim/queue machinery works off the project and owner behind
@@ -58,6 +61,18 @@ module Certification
     scope :build_stage, -> { where(reviewable_type: "Certification::Ship") }
 
     scope :for_stage, ->(stage) { stage.to_s == "design" ? design_stage : build_stage }
+
+    # Every second stage opened for a project, across both reviewable types.
+    # The reviewable is polymorphic, so this matches ids per concrete table
+    # rather than trying to join through the association.
+    scope :for_project, ->(project_id) {
+      where(
+        "(reviewable_type = 'Certification::FundingRequest' AND reviewable_id IN (:funding)) OR " \
+        "(reviewable_type = 'Certification::Ship' AND reviewable_id IN (:ships))",
+        funding: Certification::FundingRequest.where(project_id: project_id).select(:id),
+        ships: Certification::Ship.where(project_id: project_id).select(:id)
+      )
+    }
 
     # A T2 reviewer must never clear a submission they gave the first verdict
     # on - that collapses the two stages back into one. Also excludes their own
@@ -100,14 +115,19 @@ module Certification
       funding.select(:id).to_a.map(&:id) + ships.select(:id).to_a.map(&:id)
     end
 
+    # The same fraud hold-back as the T1 queues: a project flagged after its T1
+    # approval stays out of "next" until the fraud team clears it.
     def self.available_for(user)
       super.merge(for_reviewer(user))
+        .where.not(id: for_project(fraud_flagged_project_ids).select(:id))
     end
 
     # Opens (or re-opens) the second stage for a T1 review that has just been
     # approved. Idempotent on the unique reviewable index: a re-approval after
     # an undo rewinds the existing row to pending rather than stacking a new
-    # one, so the queue never shows the same submission twice.
+    # one, so the queue never shows the same submission twice. The earlier
+    # verdict's notes and bounty are cleared with it, so the fresh review starts
+    # clean.
     def self.open_for!(reviewable)
       record = find_or_initialize_by(reviewable: reviewable)
       record.assign_attributes(
@@ -115,7 +135,10 @@ module Certification
         reviewer_id: nil,
         claimed_at: nil,
         claim_expires_at: nil,
-        decided_at: nil
+        decided_at: nil,
+        feedback: nil,
+        internal_reason: nil,
+        stardust_earned: nil
       )
       record.save!
       record
@@ -140,7 +163,12 @@ module Certification
       if: -> { will_save_change_to_status? && status_change&.last.in?(DECIDED_STATUSES) && decided_at.nil? }
     before_save :assign_stardust_earned,
       if: -> { will_save_change_to_status? && status_change&.last.in?(DECIDED_STATUSES) && reviewer_id.present? }
-    after_save :apply_verdict_to_reviewable!, if: :saved_change_to_status?
+    # A return is applied inside the transaction, so the T1 review can never be
+    # left approved behind a returned second stage. The release waits for the
+    # commit: it calls HCB, and a rollback after the grant went out would lose
+    # the grant id and let a retry pay twice.
+    after_save :return_reviewable!, if: -> { saved_change_to_status? && returned? }
+    after_save_commit :release_reviewable!, if: -> { saved_change_to_status? && approved? }
 
     # Locals for the verdict notification's Slack template, delegated to the
     # underlying submission so the builder sees one coherent story rather than
@@ -164,20 +192,16 @@ module Certification
       self.stardust_earned = REVIEW_BOUNTY
     end
 
-    # The payout seam. Approving re-saves the T1 review so its deferred
-    # after_save/after_save_commit callbacks fire for real this time - the ones
-    # that were held back while `second_stage_cleared?` was false. Returning
-    # flips the T1 verdict to `returned`, which runs the ordinary return path
-    # (notify the owner, post the verdict) with the T2 reviewer's feedback.
-    def apply_verdict_to_reviewable!
-      return unless decided?
+    # The payout seam. Approving runs the T1 review's deferred effects - the
+    # ones held back while `second_stage_cleared?` was false.
+    def release_reviewable!
+      reviewable.release_second_stage!
+    end
 
-      case status.to_sym
-      when :approved
-        reviewable.release_second_stage!
-      when :returned
-        reviewable.return_from_second_stage!(reviewer: reviewer, feedback: feedback)
-      end
+    # Returning flips the T1 verdict to `returned`, which runs the ordinary
+    # return path (notify the owner, post the verdict) with the T2 feedback.
+    def return_reviewable!
+      reviewable.return_from_second_stage!(feedback: feedback)
     end
   end
 end
