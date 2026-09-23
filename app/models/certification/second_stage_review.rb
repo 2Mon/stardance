@@ -170,6 +170,13 @@ module Certification
         .where.not(id: for_project(fraud_flagged_project_ids).select(:id))
     end
 
+    # "Next" leaves out what this reviewer skipped recently, the same cooldown
+    # the T1 queues use (Certification::ReviewSkip). The queue lists still show
+    # them, so a skipped review can be opened again by hand.
+    def self.next_eligible_scope(user)
+      available_for(user).not_skipped_by(user)
+    end
+
     # Opens (or re-opens) the second stage for a T1 review that has just been
     # approved. Idempotent on the unique reviewable index: a re-approval after
     # an undo rewinds the existing row to pending rather than stacking a new

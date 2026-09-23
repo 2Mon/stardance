@@ -10,6 +10,7 @@ import { Controller } from "@hotwired/stimulus";
 //   i            open the current devlog's first photo
 //   c            collapse / expand the current devlog
 //   a / r        approve / return
+//   s            skip to the next project
 //   ctrl+space   focus the feedback box
 //   ctrl+enter   record the verdict (press twice to confirm)
 //   ?            toggle the shortcut help (Escape closes)
@@ -21,6 +22,7 @@ import { Controller } from "@hotwired/stimulus";
 const HINTS = [
   ["[data-shortcut='approve']", "A"],
   ["[data-shortcut='return']", "R"],
+  ["[data-shortcut='skip']", "S"],
 ];
 
 const SHORTCUTS = [
@@ -29,6 +31,7 @@ const SHORTCUTS = [
   ["I", "Open first photo"],
   ["C", "Collapse / expand devlog"],
   ["A / R", "Approve / return"],
+  ["S", "Skip to next project"],
   ["⌃ Space", "Focus feedback"],
   ["⌃ ⏎ ×2", "Record verdict (twice)"],
   ["?", "Show this help"],
@@ -102,6 +105,8 @@ export default class extends Controller {
         return this.consume(event, () => this.click("[data-shortcut='approve']"));
       case "r":
         return this.consume(event, () => this.click("[data-shortcut='return']"));
+      case "s":
+        return this.consume(event, () => this.click("[data-shortcut='skip']"));
       case "?":
         return this.consume(event, () => this.toggleHelp());
     }

@@ -37,6 +37,14 @@
         Claim ending in —
       </span>
     <% end %>
+    <% if @review.pending? %>
+      <%= button_to "Skip to next project",
+            skip_admin_certification_second_stage_review_path(@project),
+            method: :post,
+            form_class: "review-cockpit__skip",
+            class: "action-btn action-btn--small action-btn--secondary",
+            data: { shortcut: "skip" } %>
+    <% end %>
   </header>
 
   <div class="review-cockpit__panes" data-certification--review-panes-target="panes">

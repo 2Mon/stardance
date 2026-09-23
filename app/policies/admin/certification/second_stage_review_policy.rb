@@ -12,6 +12,10 @@ class Admin::Certification::SecondStageReviewPolicy < ApplicationPolicy
 
   def show? = second_stage_reviewer? && not_own_project?
 
+  # Passing on a review only hides it from this reviewer for a while, so anyone
+  # who can open it may skip it.
+  def skip? = show?
+
   # Taking the review to decide it. Same bar as deciding, minus the claim: the
   # T1 reviewer whose call this checks can't hold it, or they'd block everyone
   # else from it until the claim expired.

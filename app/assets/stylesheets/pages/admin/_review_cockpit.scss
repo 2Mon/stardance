@@ -30,6 +30,11 @@
     text-decoration: none;
   }
 
+  // Pushed to the far end of the bar, away from Exit.
+  &__skip {
+    margin-left: auto;
+  }
+
   &__claim-clock {
     color: var(--color-brand-peach);
     font-size: var(--font-size-s);

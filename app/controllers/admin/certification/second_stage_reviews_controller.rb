@@ -11,7 +11,7 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
   include HardwareReviewRecordings
 
   before_action -> { head :not_found unless Flipper.enabled?(:hardware_t2_review) }
-  before_action :set_review, only: [ :show, :update, :claim, :devlogs, :files ]
+  before_action :set_review, only: [ :show, :update, :claim, :skip, :devlogs, :files ]
   before_action :set_body_class
 
   QUEUE_PAGE_SIZE = 25
@@ -72,6 +72,17 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
       redirect_to second_stage_path,
                   alert: "Couldn't claim that review, someone else got it."
     end
+  end
+
+  # Passing on this review for now. Records a per-reviewer skip so "next" keeps
+  # it out of *their* hands for the cooldown window, then hands out the next
+  # one - whose release_other_claims gives this claim back, so another T2
+  # reviewer can pick it up straight away. Mirrors HardwareReviewQueue#skip.
+  def skip
+    authorize @review
+
+    ::Certification::ReviewSkip.record!(user: current_user, reviewable: @review) if @review.pending?
+    redirect_to next_admin_certification_second_stage_reviews_path(stage: @review.stage)
   end
 
   def show
