@@ -34,6 +34,12 @@ module GitHost
       raise NotImplementedError
     end
 
+    # The text of one file at HEAD, or nil when the host can't serve it. Used by
+    # the review dashboards to render a README beside the file list.
+    def fetch_file(_path)
+      nil
+    end
+
     def fetch_languages
       nil
     end

@@ -927,7 +927,10 @@ Rails.application.routes.draw do
       # claims reuse the funding/ship mutation endpoints above so PaperTrail and
       # existing audit behavior stay attached to the underlying records.
       # `index` redirects to the design queue so older links keep working.
-      resources :hardware_reviews, path: "hardware", param: :project_id, only: [ :index, :show ] do
+      # project_id is constrained to digits so "hardware/t2" reads as the second
+      # stage below rather than as a project called "t2".
+      resources :hardware_reviews, path: "hardware", param: :project_id, only: [ :index, :show ],
+                constraints: { project_id: /\d+/ } do
         collection do
           get :design
           get :build
@@ -941,8 +944,12 @@ Rails.application.routes.draw do
       end
 
       # The T2 (second stage) hardware queue: submissions already approved at T1
-      # and waiting on a second pair of eyes before anything is paid out.
-      resources :second_stage_reviews, path: "t2", only: [ :index, :show, :update ] do
+      # and waiting on a second pair of eyes before anything is paid out. Sits
+      # under the hardware path and is keyed by project, the same as the T1
+      # review it follows, so a reviewer can move between the two stages of one
+      # project by editing the url.
+      resources :second_stage_reviews, path: "hardware/t2", param: :project_id,
+                only: [ :index, :show, :update ] do
         collection do
           get :design
           get :build
@@ -950,6 +957,8 @@ Rails.application.routes.draw do
         end
         member do
           post :claim
+          get :devlogs
+          get :files
         end
       end
 

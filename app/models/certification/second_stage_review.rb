@@ -43,6 +43,12 @@ module Certification
 
     VERDICTS = %w[approved returned].freeze
 
+    # Photos a T2 reviewer attaches to their feedback, the same affordance the
+    # T1 funding verdict has.
+    has_many_attached :feedback_images do |attachable|
+      attachable.variant :thumb, resize_to_limit: [ 320, 320 ], format: :webp
+    end
+
     validates :feedback, length: { maximum: 10_000 }, allow_blank: true
     # A return replaces the T1 feedback the builder sees, so it has to say why:
     # left blank, the builder would get a return carrying T1's approving note.

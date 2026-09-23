@@ -8,11 +8,18 @@
 # (HCB grant, ship certification cascade) is fired by that model, not here, so
 # PaperTrail and the deferred callbacks stay attached to the review records.
 class Admin::Certification::SecondStageReviewsController < Admin::Certification::ApplicationController
+  include HardwareReviewRecordings
+
   before_action -> { head :not_found unless Flipper.enabled?(:hardware_t2_review) }
-  before_action :set_review, only: [ :show, :update, :claim ]
+  before_action :set_review, only: [ :show, :update, :claim, :devlogs, :files ]
   before_action :set_body_class
 
   QUEUE_PAGE_SIZE = 25
+
+  # The newest devlogs only: a long-running project would otherwise turn this
+  # page into a full project history, and the oldest posts are the least useful
+  # evidence for the verdict being recorded now.
+  DEVLOG_GALLERY_LIMIT = 12
 
   def index
     authorize ::Certification::SecondStageReview
@@ -45,7 +52,7 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
 
     claimed = ::Certification::SecondStageReview.atomic_claim!(candidate.id, current_user)
     if claimed
-      redirect_to admin_certification_second_stage_review_path(claimed)
+      redirect_to second_stage_path(claimed)
     else
       redirect_to next_admin_certification_second_stage_reviews_path(stage: stage)
     end
@@ -60,9 +67,9 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
     ::Certification::SecondStageReview.release_all_for(current_user)
     claimed = ::Certification::SecondStageReview.atomic_claim!(@review.id, current_user)
     if claimed
-      redirect_to admin_certification_second_stage_review_path(@review)
+      redirect_to second_stage_path
     else
-      redirect_to admin_certification_second_stage_review_path(@review),
+      redirect_to second_stage_path,
                   alert: "Couldn't claim that review, someone else got it."
     end
   end
@@ -75,6 +82,7 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
     @first_stage_reviewer = @review.first_stage_reviewer
     @review_notes = @project.review_notes.includes(:author).newest_first
     @devlog_count = @project.devlog_posts.count
+    load_undo_context
 
     # Everything this project has already been through, newest first: earlier
     # funding requests and ship certifications, including the returns that sent
@@ -89,12 +97,59 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
       .reverse
   end
 
+  # The evidence rail: devlogs with their media, plus the Lapse and Lookout
+  # recordings bucketed under the devlog whose time window they fall in. Loaded
+  # in its own frame because both recording services are network calls and the
+  # verdict form must never wait on them.
+  def devlogs
+    authorize @review, :show?
+
+    @project = @review.reviewable.project
+    @owner = @review.owner
+    @order = params[:order] == "oldest" ? "oldest" : "newest"
+    @devlog_count = @project.devlog_posts.count
+    @devlogs = ordered_devlogs
+
+    @lapse_owner_uid = @owner&.hackatime_identity&.uid
+    @lapse_timelapses = lapse_timelapses_for(@project, @owner)
+    @lookout_recordings = lookout_recordings_for(@project)
+
+    windows = devlog_windows
+    @devlog_lapses = ::Certification::DevlogRecordingBucketer.call(
+      recordings: @lapse_timelapses, windows: windows
+    )
+    @devlog_lookouts = ::Certification::DevlogRecordingBucketer.call(
+      recordings: @lookout_recordings, windows: windows
+    )
+
+    render :devlogs, layout: false
+  end
+
+  # The repo as a file list plus one rendered file, defaulting to the README.
+  # Its own frame for the same reason the rail is: this is two GitHub calls, and
+  # a rate-limited or slow host must not delay the verdict form.
+  def files
+    authorize @review, :show?
+
+    @project = @review.reviewable.project
+    @filenames, @selected_path, @file_body = fetch_repo_files
+
+    @file_tree = build_file_tree(@filenames)
+    # Every folder on the way to the selected file, so the tree opens to it
+    # rather than making the reviewer click back down the path.
+    @open_dirs = @selected_path.to_s.split("/")[0..-2].each_with_object([]) do |segment, dirs|
+      dirs << [ dirs.last, segment ].compact.join("/")
+    end
+
+    render :files, layout: false
+  end
+
   def update
     authorize @review
 
     verdict = params.dig(:certification_second_stage_review, :verdict).to_s
     unless ::Certification::SecondStageReview::VERDICTS.include?(verdict)
-      redirect_to admin_certification_second_stage_review_path(@review),
+      redirect_to second_stage_path,
                   alert: "Pick approve or return." and return
     end
 
@@ -105,18 +160,126 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
     )
 
     if @review.save
+      # After the save: attaching to a persisted record writes straight away, so
+      # attaching first would keep the photos on a verdict that failed to save.
+      images = params.dig(:certification_second_stage_review, :feedback_images)
+      @review.feedback_images.attach(images.compact_blank) if images.present?
+
       redirect_to queue_path_for(@review.stage), notice: verdict_notice(@review)
     else
-      redirect_to admin_certification_second_stage_review_path(@review),
+      redirect_to second_stage_path,
                   alert: @review.errors.full_messages.to_sentence
     end
   end
 
   private
 
+  # Keyed by project rather than by review id: a project has at most one second
+  # stage open at a time (the design stage is cleared before the build one is
+  # created), so the pending one is the one being looked at. Falling back to the
+  # newest decided review keeps a link to an already-decided stage working.
   def set_review
-    @review = ::Certification::SecondStageReview.find(params[:id])
+    scope = ::Certification::SecondStageReview.for_project(params[:project_id])
+    @review = scope.pending.order(created_at: :desc).first ||
+              scope.order(created_at: :desc).first
+    raise ActiveRecord::RecordNotFound if @review.nil?
   end
+
+  # Newest first by default: the most recent work is the most useful evidence
+  # for the verdict being recorded now.
+  def ordered_devlogs
+    scope = @project.devlogs.includes(:post, attachments_attachments: :blob).to_a
+    scope.sort_by! { |d| d.post&.created_at || d.created_at }
+    scope.reverse! if @order == "newest"
+    scope.first(DEVLOG_GALLERY_LIMIT)
+  end
+
+  # Each devlog covers the stretch since the previous one, so a recording made
+  # in that stretch is the footage behind its logged time. Half-open windows,
+  # matching Certification::DevlogRecordingBucketer's rule.
+  def devlog_windows
+    posts = @project.devlog_posts.reorder("posts.created_at ASC").to_a
+    posts.each_with_index.with_object({}) do |(post, idx), windows|
+      since = idx.zero? ? @project.created_at : posts[idx - 1].created_at
+      windows[post.postable_id] = { since: since.iso8601, before: post.created_at.iso8601 }
+    end
+  end
+
+  # The reverse control on the T1 verdict, shown only to someone the undo policy
+  # lets reverse it. The preflight can make an HCB round trip, so it is skipped
+  # entirely for anyone who couldn't act on it.
+  def load_undo_context
+    return unless Flipper.enabled?(:hardware_review_undo, current_user)
+    return unless @reviewable.decided?
+
+    policy_class = @reviewable.is_a?(::Certification::FundingRequest) ?
+      Admin::Certification::FundingRequestPolicy : Admin::Certification::ShipPolicy
+    return unless policy_class.new(current_user, @reviewable).undo?
+
+    @undo_review = @reviewable
+    @undo_preflight = ::Certification::ReviewUndoer.new(@reviewable).preflight
+  end
+
+  def undo_review_path(review)
+    if review.is_a?(::Certification::FundingRequest)
+      undo_admin_certification_funding_request_path(review)
+    else
+      undo_admin_certification_ship_path(review)
+    end
+  end
+  helper_method :undo_review_path
+
+  # GitHub hands back a flat list of blob paths, so the directory structure has
+  # to be rebuilt from the slashes. Directories become nested hashes, files map
+  # to their full path (what the file links need); sorting puts folders first,
+  # then files, each alphabetically, the way a file browser reads.
+  def build_file_tree(paths)
+    root = {}
+    paths.each do |path|
+      *dirs, name = path.split("/")
+      node = dirs.reduce(root) { |current, dir| current[dir] ||= {} }
+      node[name] = path
+    end
+    sort_file_tree(root)
+  end
+
+  def sort_file_tree(node)
+    node.sort_by { |name, child| [ child.is_a?(Hash) ? 0 : 1, name.downcase ] }
+        .to_h { |name, child| [ name, child.is_a?(Hash) ? sort_file_tree(child) : child ] }
+  end
+
+  # The two GitHub calls, and only those, behind a rescue: a repo that is
+  # private, renamed or rate-limited should leave the panel empty rather than
+  # error the page. Deliberately narrow - wrapping the whole action would also
+  # swallow Pundit's denial and render an authorization failure as a broken
+  # page instead of a redirect.
+  def fetch_repo_files
+    return [ [], nil, nil ] if @project.repo_url.blank?
+
+    host = ::GitHost::Base.for(@project.repo_url)
+    names = (host&.fetch_filenames || []).sort
+    @filenames = names
+    selected = params[:path].presence_in(names) || default_readme
+    [ names, selected, selected ? host&.fetch_file(selected) : nil ]
+  rescue StandardError => e
+    Rails.logger.error("T2 file browser failed for project #{@project&.id}: #{e.message}")
+    [ [], nil, nil ]
+  end
+
+  # A repo's README, whatever it happens to be called, preferring one at the
+  # root over a deeper one so a docs/ copy doesn't win.
+  def default_readme
+    @filenames
+      .select { |name| File.basename(name).match?(/\Areadme(\.|\z)/i) }
+      .min_by { |name| [ name.count("/"), name.length ] }
+  end
+
+  # The review page is addressed by project, so every link to it goes through
+  # here rather than each caller reaching for the project id itself.
+  def second_stage_path(review = @review)
+    admin_certification_second_stage_review_path(review.reviewable.project_id)
+  end
+  helper_method :second_stage_path
 
   def stage_param
     params[:stage].presence_in(%w[design build]) || "design"

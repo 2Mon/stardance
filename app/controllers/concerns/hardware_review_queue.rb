@@ -13,6 +13,7 @@
 #   hardware_review_path(project)
 #   hardware_queue_path(stage)     -> "design" | "build"
 #   hardware_next_path(stage:, skip: nil)
+#   hardware_t2_queue_path         -> the T2 queue this dash feeds, or nil for none
 module HardwareReviewQueue
   extend ActiveSupport::Concern
 
@@ -25,7 +26,7 @@ module HardwareReviewQueue
     helper_method :hardware_review_path, :hardware_queue_path, :hardware_next_path,
                   :hardware_skip_path, :hardware_queue_title, :hardware_back_link,
                   :hardware_flag_for_fraud_path, :undo_review_path,
-                  :hardware_recordings_path
+                  :hardware_recordings_path, :hardware_t2_queue_path
   end
 
   def design

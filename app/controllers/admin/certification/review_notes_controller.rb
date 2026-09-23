@@ -13,14 +13,25 @@ class Admin::Certification::ReviewNotesController < Admin::Certification::Applic
     authorize @note, policy_class: Admin::Certification::ReviewNotePolicy
 
     if @note.save
-      redirect_to hardware_review_path_for(@project), notice: "Reviewer note added."
+      redirect_to return_path, notice: "Reviewer note added."
     else
-      redirect_to hardware_review_path_for(@project),
+      redirect_to return_path,
                   alert: @note.errors.full_messages.to_sentence.presence || "Couldn't add that note."
     end
   end
 
   private
+
+  # Notes are written from two places now: the T1 hardware review and the T2
+  # cockpit. A flag rather than a url, so the caller can't redirect us anywhere
+  # it likes; both stages are addressed by the project either way.
+  def return_path
+    if params[:second_stage].present?
+      admin_certification_second_stage_review_path(@project)
+    else
+      hardware_review_path_for(@project)
+    end
+  end
 
   def set_project
     @project = Project.find(params[:project_id])

@@ -57,7 +57,7 @@
       <ul class="t2-queue__list">
         <% @reviews.each do |review| %>
           <li class="t2-queue__item">
-            <%= link_to admin_certification_second_stage_review_path(review), class: "t2-queue__link" do %>
+            <%= link_to admin_certification_second_stage_review_path(review.reviewable.project_id), class: "t2-queue__link" do %>
               <div class="t2-queue__main">
                 <span class="t2-queue__project"><%= review.project.title %></span>
                 <span class="t2-queue__stage-pill"><%= review.stage_label %></span>

@@ -61,6 +61,10 @@ module Admin
         skip_admin_mission_hardware_reviews_path(@mission.slug, stage: stage)
       end
 
+      # No T2 link from a mission's dash: the second stage is a single global
+      # queue, not one per mission.
+      def hardware_t2_queue_path = nil
+
       def hardware_queue_title(design)
         "#{@mission.name} #{design ? 'design' : 'build'} review queue"
       end
