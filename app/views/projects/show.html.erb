@@ -202,8 +202,10 @@
                     <span class="project-show__stage-choice-label project-show__stage-choice-label--locked">
                       <% if fr.nil? %>
                         Design Stage
+                      <% elsif fr.awaiting_second_stage? %>
+                        Design Stage — awaiting final review and release
                       <% elsif fr.issues_grant? %>
-                        Design Stage — $<%= fr.final_amount_dollars %> approved
+                        Design Stage — $<%= fr.payable_amount_dollars %> approved
                       <% elsif fr.approved? %>
                         Design Stage — approved
                       <% elsif fr.pending? %>

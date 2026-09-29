@@ -10,12 +10,14 @@
     re-shows the request with the reviewer's picks still staged (unsaved), and
     those must not appear as though they were already attached.
 
-    Locals: funding_request (required). %>
-<% saved_feedback_images = funding_request.feedback_images.select(&:persisted?) %>
+    Locals: funding_request (required); feedback_review (optional T2 source),
+    dialog_id (optional when the same feedback appears twice on a page). %>
+<% feedback_review = local_assigns.fetch(:feedback_review, funding_request) %>
+<% saved_feedback_images = feedback_review.respond_to?(:feedback_images) ? feedback_review.feedback_images.select(&:persisted?) : [] %>
 <% if saved_feedback_images.any? %>
-  <% dialog_id = "feedback-images-#{funding_request.id}" %>
-  <% reviewer = funding_request.reviewer %>
-  <% decided_on = funding_request.decided_at || funding_request.created_at %>
+  <% dialog_id = local_assigns.fetch(:dialog_id) { "feedback-images-#{dom_id(funding_request)}" } %>
+  <% reviewer = feedback_review.reviewer %>
+  <% decided_on = feedback_review.decided_at || feedback_review.created_at %>
 
   <ul class="feedback-images">
     <% saved_feedback_images.each do |image| %>
@@ -68,9 +70,9 @@
           </div>
         </header>
 
-        <% if funding_request.feedback.present? %>
+        <% if feedback_review.feedback.present? %>
           <div class="feed-post-card__body markdown-content">
-            <%= simple_format(funding_request.feedback, {}, sanitize: true) %>
+            <%= simple_format(feedback_review.feedback, {}, sanitize: true) %>
           </div>
         <% end %>
 

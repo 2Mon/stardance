@@ -1,13 +1,20 @@
 <%
   approved = decision.approved?
-  message = if approved
+  awaiting_second_stage = decision.awaiting_second_stage?
+  message = if awaiting_second_stage
+    "Your build has passed its first review and is waiting for final review and release. You cannot ship again yet."
+  elsif approved && project.hardware?
+    "Your build is certified. You can ship again after making more updates."
+  elsif approved
     "This project was vetted by Shipwrights and is now up for voting. You can ship again after making more updates."
   else
     "This needs changes before we can consider it shipped. Review the Shipwright feedback, make updates, then ship again."
   end
   decided_on = decision.decided_on
-  reviewer = decision.reviewer
+  reviewer = decision.effective_reviewer
   reviewer_name = reviewer&.display_name.presence
+  feedback_review = decision.effective_feedback_review
+  has_feedback_photos = feedback_review.respond_to?(:feedback_images) && feedback_review.feedback_images.attached?
   returned = decision.returned? && project.needs_changes? &&
     decision == project.latest_ship_review
 %>
@@ -35,7 +42,7 @@
         <% else %>
           <span class="feed-post-card__author">Shipwrights</span>
         <% end %>
-        <span class="feed-post-card__context"><%= approved ? "approved" : "returned" %></span>
+        <span class="feed-post-card__context"><%= awaiting_second_stage ? "completed the first review of" : (approved ? "approved" : "returned") %></span>
         <span class="ship-decision-card__subject">your project</span>
         <time class="feed-post-card__time" datetime="<%= decided_on.iso8601 %>" title="<%= l(decided_on, format: :long) %>">
           · <%= time_ago_in_words(decided_on) %> ago
@@ -48,17 +55,18 @@
     <p><%= message %></p>
   </div>
 
-  <% if decision.feedback.present? %>
+  <% if (feedback_review.feedback.present? || has_feedback_photos) && !awaiting_second_stage %>
     <section class="feed-post-card__body ship-decision-card__feedback" aria-label="Shipwright feedback">
       <p class="ship-decision-card__feedback-label">Feedback</p>
       <div class="ship-decision-card__feedback-body">
         <%# Action items are a hardware-only affordance; software feedback stays
             plain prose, bullets and all. %>
         <% if action_items_enabled? && project.hardware? %>
-          <%= render "projects/review_feedback", review: decision %>
+          <%= render "projects/review_feedback", review: feedback_review %>
         <% else %>
-          <%= simple_format(decision.feedback, {}, sanitize: true) %>
+          <%= simple_format(feedback_review.feedback, {}, sanitize: true) %>
         <% end %>
+        <%= render "admin/certification/funding_requests/feedback_images", funding_request: decision, feedback_review: feedback_review %>
       </div>
     </section>
   <% end %>

@@ -517,7 +517,7 @@ class Project < ApplicationRecord
   # second request (the unique index only covers pending).
   def has_pending_funding_request?
     certification_funding_requests.pending.exists? ||
-      certification_funding_requests.approved.any?(&:awaiting_second_stage?)
+      certification_funding_requests.approved.includes(:second_stage_review).any?(&:awaiting_second_stage?)
   end
 
   # True once any funding request has been submitted (pending, approved, or returned).
@@ -851,7 +851,9 @@ class Project < ApplicationRecord
 
   # True while a ship is waiting on a reviewer decision. Blocks re-shipping
   # until that ship is approved or returned for changes.
-  def awaiting_ship_review? = ship_reviews.pending.exists?
+  def awaiting_ship_review?
+    ship_reviews.pending.exists? || ship_reviews.approved.includes(:second_stage_review).any?(&:awaiting_second_stage?)
+  end
 
   def ship_blocking_errors = shipping_requirements.reject { |r| r[:passed] }.map { |r| r[:label] }
 

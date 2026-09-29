@@ -41,6 +41,7 @@ Rails.application.config.after_initialize do
         hardware_flow
         hardware_action_items
         hardware_review_undo
+        hardware_t2_review
         public_hardware_reviews
         ship_event_payouts
         payout_recommendations

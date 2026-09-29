@@ -5,7 +5,7 @@
     <strong>approved</strong>
   <% else %>
     <span class="notifications-item__verb">Your funding request was</span>
-    <strong>approved<%= " for $#{request.final_amount_dollars}" if request.final_amount_dollars.to_i.positive? %></strong>
+    <strong>approved<%= " for $#{request.payable_amount_dollars}" if request.payable_amount_cents.to_i.positive? %></strong>
   <% end %>
 <% else %>
   <span class="notifications-item__verb">Your funding request</span>

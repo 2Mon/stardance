@@ -97,9 +97,12 @@ module GitHost
 
       full_url = "#{api_base}/repos/#{owner}/#{repo}/contents/#{ERB::Util.url_encode(path).gsub('%2F', '/')}"
       body = http_get(full_url, headers: auth_headers)
-      return nil unless body.is_a?(Hash) && body["encoding"] == "base64" && body["content"].present?
+      return nil unless body.is_a?(Hash) && body["encoding"] == "base64" && body["content"].is_a?(String)
 
-      Base64.decode64(body["content"]).force_encoding("UTF-8").scrub
+      content = Base64.decode64(body["content"]).force_encoding("UTF-8")
+      return nil if content.bytesize > 1.megabyte || !content.valid_encoding? || content.match?(/[\x00-\x08\x0B\x0C\x0E-\x1F]/)
+
+      content
     end
 
     def fetch_languages

@@ -8,12 +8,16 @@ class Admin::Certification::SecondStageReviewPolicy < ApplicationPolicy
   def build? = index?
   def next? = index?
 
-  def show? = second_stage_reviewer? && not_own_project?
+  def show? = second_stage_reviewer? && active_project? && not_own_project?
 
-  def skip? = show?
+  def skip? = claim?
 
   # The T1 reviewer can't hold the claim, or they'd block everyone until it expired.
-  def claim? = second_stage_reviewer? && not_own_project? && not_own_first_stage?
+  def claim? = show? && record.current? && record.pending? && record.reviewable.approved? && not_own_first_stage?
+
+  def retry_release?
+    show? && not_own_first_stage? && record.release_pending? && record.reviewable.approved?
+  end
 
   # Pending only: re-deciding would return a submission whose payout already went out.
   def update?
@@ -31,6 +35,10 @@ class Admin::Certification::SecondStageReviewPolicy < ApplicationPolicy
   end
 
   private
+
+  def active_project?
+    record.project.present? && !record.project.deleted?
+  end
 
   def second_stage_reviewer?
     user.present? && (user.has_role?(:t2_reviewer) || user.admin?)

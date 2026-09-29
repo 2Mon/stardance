@@ -55,7 +55,9 @@ module Certification
 
       effects = [ reverse(:review, review_reversal_detail) ]
       funding? ? funding_effects(effects) : ship_effects(effects)
-      effects << correction(:notifications, "The builder was already told the verdict, so they get a private DM that it's been undone. Nothing is posted publicly.")
+      unless review.awaiting_second_stage?
+        effects << correction(:notifications, "The builder was already told the verdict, so they get a private DM that it's been undone. Nothing is posted publicly.")
+      end
       outcome(effects)
     end
 
@@ -64,31 +66,33 @@ module Certification
     # inside the row lock, after the re-check and the DB reversal, so a grant can
     # never be cancelled unless the review is reversed in the same breath.
     def undo!
-      pf = preflight
-      return outcome(pf.effects, undone: false) unless pf.undoable?
+      review.with_review_lock do
+        pf = preflight
+        return outcome(pf.effects, undone: false) unless pf.undoable?
 
-      original_status = review.status
-      grant_hashid = grant_hashid_to_cancel(pf)
+        undone = false
+        review.with_lock do
+          next unless still_undoable?
 
-      undone = false
-      review.with_lock do
-        # Cheap re-check under the row lock (no HCB round-trip) so a double-submit
-        # can't undo twice, and so the grant below is only cancelled once we know
-        # the reversal will go through.
-        next unless still_undoable?
+          # Release may have finished since the page/preflight was read. Rebuild
+          # the cancellation plan from the locked row, including a fresh HCB read.
+          @fresh_grant_status = true
+          pf = preflight
+          next unless pf.undoable?
+          original_status = review.status
+          grant_hashid = grant_hashid_to_cancel(pf)
 
-        reverse_review_record!
-        funding? ? reverse_funding_side_effects!(original_status) : reverse_ship_side_effects!
-        # External reversals run last: a failure rolls the whole transaction back,
-        # so a cancelled grant can never be stranded on a non-reversed review.
-        raise ActiveRecord::Rollback unless perform_external_reversals!(grant_hashid)
+          reverse_review_record!
+          funding? ? reverse_funding_side_effects!(original_status) : reverse_ship_side_effects!
+          raise ActiveRecord::Rollback unless perform_external_reversals!(grant_hashid)
 
-        undone = true
+          undone = true
+        end
+        return outcome(pf.effects, undone: false) unless undone
+
+        notify_owner_of_undo! if pf.corrections.any?
+        outcome(pf.effects, undone: true)
       end
-      return outcome(pf.effects, undone: false) unless undone
-
-      notify_owner_of_undo!
-      outcome(pf.effects, undone: true)
     end
 
     private
@@ -175,7 +179,7 @@ module Certification
       elsif grant_spent?(data)
         effects << block(:hcb_grant, "The HCB grant has already been spent (#{spent_summary(data)}). Reconcile or refund it in HCB before undoing.")
       else
-        effects << reverse(:hcb_grant, "Cancel the unspent $#{review.final_amount_dollars} HCB card grant.")
+        effects << reverse(:hcb_grant, "Cancel the unspent $#{review.payable_amount_dollars} HCB card grant.")
       end
     end
 
@@ -186,6 +190,8 @@ module Certification
     GRANT_STATUS_CACHE_TTL = 90.seconds
 
     def fetch_grant
+      return HCBService.show_card_grant(hashid: review.hcb_grant_hashid) if @fresh_grant_status
+
       Rails.cache.fetch([ "hardware_review_undo", "card_grant", review.hcb_grant_hashid ], expires_in: GRANT_STATUS_CACHE_TTL) do
         HCBService.show_card_grant(hashid: review.hcb_grant_hashid)
       end
@@ -197,10 +203,10 @@ module Certification
     # Spent/cancelled classification reuses ShopCardGrant's field handling, the
     # same reader the shop-fulfillment path (Shop::HCBGrantFulfillable#topupable?)
     # uses, so both judge a grant off identical payload fields.
-    def grant_spent?(data) = ShopCardGrant.spent_grant?(data, expected_cents: review.final_amount_cents)
+    def grant_spent?(data) = ShopCardGrant.spent_grant?(data, expected_cents: review.payable_amount_cents)
 
     def spent_summary(data)
-      amount = (data["amount_cents"] || review.final_amount_cents).to_i
+      amount = (data["amount_cents"] || review.payable_amount_cents).to_i
       spent = amount - data["balance_cents"].to_i
       "$#{spent / 100} of $#{amount / 100} spent"
     end
@@ -233,7 +239,7 @@ module Certification
     # The ship verdict only moved the project's AASM state when the ship was the
     # latest; only rewind it from a state a verdict could have produced.
     def project_state_reversible?
-      project && project.ship_status.to_s.in?(%w[approved needs_changes under_review])
+      project && project.ship_status.to_s.in?(%w[approved needs_changes under_review submitted])
     end
 
     def ysws_effects(effects)

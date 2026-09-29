@@ -6,7 +6,7 @@ class Projects::ShipsController < ApplicationController
     authorize @project, :ship?
 
     latest_review = @project.latest_ship_review
-    if latest_review&.pending?
+    if @project.awaiting_ship_review?
       redirect_to project_path(@project),
                   alert: "Your project is being reviewed. You can ship again once it's approved." and return
     elsif latest_review&.returned? && @project.needs_changes?
@@ -30,6 +30,10 @@ class Projects::ShipsController < ApplicationController
     probe_result = reship ? ProjectUrlProbeService.new(@project).call : nil
 
     @project.with_lock do
+      if @project.awaiting_ship_review?
+        redirect_to project_path(@project), alert: "A review is already pending for this project." and return
+      end
+
       @project.submit_for_review!
       ship_event = Post::ShipEvent.new(body: params[:ship_update].to_s.strip)
       ship_event.uploading_attachments = params.dig(:ship_event, :attachments).present?

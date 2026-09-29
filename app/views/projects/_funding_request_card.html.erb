@@ -14,11 +14,13 @@
     Locals: funding_request, project, owner (required); resubmit_modal_id
     (optional - when present a returned request offers a resubmit button). %>
 <%
-  decided_on = funding_request.decided_at || funding_request.created_at
-  reviewer = funding_request.reviewer
+  decided_on = funding_request.effective_decided_at || funding_request.created_at
+  reviewer = funding_request.effective_reviewer
+  awaiting_second_stage = funding_request.awaiting_second_stage?
+  feedback_review = funding_request.effective_feedback_review
   viewer_is_owner = owner.present? && owner == current_user
   feedback_visible = viewer_is_owner || current_user&.can_review? || Flipper.enabled?(:public_hardware_reviews)
-  show_feedback = funding_request.feedback.present? && !funding_request.pending? && feedback_visible
+  show_feedback = (feedback_review.feedback.present? || feedback_review.feedback_images.attached?) && !funding_request.pending? && !awaiting_second_stage && feedback_visible
 
   kit_mission = funding_request.kit_mission?
   awards_kit = funding_request.awards_design_kit?
@@ -34,11 +36,14 @@
     elsif funding_request.approved_without_grant?
       "Approved, and the project has moved to the build stage. This one comes without a grant, so keep logging your build hours and ship when you're ready."
     else
-      "Approved for $#{funding_request.final_amount_dollars}, and the project has moved to the build stage. Your grant card follows once it has been issued."
+      "Approved for $#{funding_request.payable_amount_dollars}, and the project has moved to the build stage. Your grant card follows once it has been issued."
     end
 
   context, message =
-    case funding_request.status.to_sym
+    case awaiting_second_stage ? :awaiting_second_stage : funding_request.status.to_sym
+    when :awaiting_second_stage
+      [ "completed the first review",
+        "Your design is waiting for its final review and release. Funding and kits are not available yet." ]
     when :approved
       [ kit_mission ? "approved your design" : "approved your funding request", approved_message ]
     when :returned
@@ -84,31 +89,31 @@
 
     <% unless kit_mission %>
       <span class="funding-request-card__amount">
-        $<%= funding_request.requested_amount_dollars %>
+        $<%= funding_request.approved? && !awaiting_second_stage ? funding_request.payable_amount_dollars : funding_request.requested_amount_dollars %>
         <span class="funding-request-card__tier"><%= funding_request.tier_label %></span>
       </span>
     <% end %>
   </header>
 
   <%
-    has_feedback_photos = show_feedback && funding_request.feedback_images.any?(&:persisted?)
+    has_feedback_photos = show_feedback && feedback_review.feedback_images.any?(&:persisted?)
     message_class = class_names("feed-post-card__body", "funding-request-card__message",
                                 "funding-request-card__message--openable" => has_feedback_photos)
     # The whole review opens the feedback modal; guarded so a thumbnail click
     # (which opens it too) doesn't re-call showModal on an already-open dialog.
     open_modal_js =
       if has_feedback_photos
-        "var d=document.getElementById('feedback-images-#{funding_request.id}'); if (d && !d.open) d.showModal()"
+        "var d=document.getElementById('feedback-images-#{dom_id(funding_request)}'); if (d && !d.open) d.showModal()"
       end
   %>
   <%= tag.div class: message_class, onclick: open_modal_js do %>
     <% if show_feedback %>
       <% if action_items_enabled? %>
-        <%= render "projects/review_feedback", review: funding_request %>
+        <%= render "projects/review_feedback", review: feedback_review %>
       <% else %>
-        <%= simple_format(funding_request.feedback, {}, sanitize: true) %>
+        <%= simple_format(feedback_review.feedback, {}, sanitize: true) %>
       <% end %>
-      <%= render "admin/certification/funding_requests/feedback_images", funding_request: funding_request %>
+      <%= render "admin/certification/funding_requests/feedback_images", funding_request: funding_request, feedback_review: feedback_review %>
     <% else %>
       <p><%= message %></p>
     <% end %>

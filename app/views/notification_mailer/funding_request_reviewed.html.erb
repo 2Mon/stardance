@@ -9,7 +9,7 @@
 <% if approved %>
   <p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#3a3a4a;">
     <% if project && @record.issues_grant? %>
-      <strong><%= project.title %></strong> is approved for <strong>$<%= @record.final_amount_dollars %></strong> in funding<% if @actor %>, reviewed by <strong>@<%= @actor.display_name %></strong><% end %>.
+      <strong><%= project.title %></strong> is approved for <strong>$<%= @record.payable_amount_dollars %></strong> in funding<% if @actor %>, reviewed by <strong>@<%= @actor.display_name %></strong><% end %>.
     <% elsif project %>
       <strong><%= project.title %></strong> is approved<% if @actor %>, reviewed by <strong>@<%= @actor.display_name %></strong><% end %>.
     <% else %>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_22_211544) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_28_200034) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -269,17 +269,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_211544) do
     t.datetime "created_at", null: false
     t.datetime "decided_at"
     t.text "feedback"
+    t.jsonb "first_stage_snapshot"
     t.text "internal_reason"
     t.integer "lock_version", default: 0, null: false
+    t.datetime "released_at"
     t.bigint "reviewable_id", null: false
     t.string "reviewable_type", null: false
     t.bigint "reviewer_id"
     t.integer "stardust_earned"
     t.integer "status", default: 0, null: false
+    t.datetime "superseded_at"
     t.datetime "updated_at", null: false
     t.index ["decided_at"], name: "index_certification_second_stage_reviews_on_decided_at"
     t.index ["reviewable_type", "reviewable_id"], name: "index_certification_second_stage_reviews_on_reviewable"
-    t.index ["reviewable_type", "reviewable_id"], name: "index_second_stage_reviews_unique_reviewable", unique: true
+    t.index ["reviewable_type", "reviewable_id"], name: "index_second_stage_reviews_unique_current", unique: true, where: "(superseded_at IS NULL)"
     t.index ["reviewer_id"], name: "index_certification_second_stage_reviews_on_reviewer_id"
     t.index ["status", "claim_expires_at"], name: "idx_second_stage_reviews_on_status_claim_expires"
   end

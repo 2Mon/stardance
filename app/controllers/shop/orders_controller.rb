@@ -97,7 +97,7 @@ class Shop::OrdersController < Shop::BaseController
     total_cost = item_total + accessories_total + modifiers_total
 
     begin
-      ActiveRecord::Base.transaction do
+      with_order_transaction do
         current_user.lock!
         @shop_item.lock! if @shop_item.limited?
 
@@ -200,6 +200,24 @@ class Shop::OrdersController < Shop::BaseController
 
   private
 
+  # Undo and kit checkout must agree on whether this approval is still live.
+  # Lock the funding review before user/item locks and recheck after reloading.
+  def with_order_transaction(&block)
+    unless @redeemable.is_a?(Certification::FundingRequest)
+      return ActiveRecord::Base.transaction(&block)
+    end
+
+    @redeemable.with_review_lock do
+      @redeemable.with_lock do
+        unless @redeemable.redeemable_prize_for(@shop_item)
+          @redeemable.errors.add(:base, "This kit is no longer available to claim.")
+          raise ActiveRecord::RecordInvalid, @redeemable
+        end
+        yield
+      end
+    end
+  end
+
   # The free-price accessor differs by gate; it must be set before save so the
   # price freezes to 0.
   def assign_redemption_gate(order, gate)
@@ -213,10 +231,14 @@ class Shop::OrdersController < Shop::BaseController
   # Ties the placed order back to whatever unlocked it, so a gate cannot be
   # spent twice.
   def record_redemption!(order, gate)
-    case gate
+    redemption = case gate
     when StickyStreak::DayClaim then gate.sticky_streak.record_claim!(shop_order: order, day: gate.day)
     else Mission::PrizeRedemption.record!(shop_order: order, gate: gate)
     end
+    return redemption if redemption
+
+    order.errors.add(:base, "This prize is no longer available to claim.")
+    raise ActiveRecord::RecordInvalid, order
   end
 
   def find_sharable_order

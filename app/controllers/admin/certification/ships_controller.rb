@@ -144,10 +144,16 @@ class Admin::Certification::ShipsController < Admin::Certification::ApplicationC
     if internal_sw_dash_reviews_disabled? && @ship.external_certification_id.present?
       return redirect_to admin_certification_ships_path, alert: "Reviews are handled on the Shipwrights dashboard."
     end
-    return redirect_to admin_certification_ship_path(@ship), alert: "Ship is no longer pending." unless @ship.pending?
+    saved = @ship.with_review_lock do
+      @ship.with_lock do
+        authorize @ship
+        return redirect_to admin_certification_ship_path(@ship), alert: "Ship is no longer pending." unless @ship.pending?
 
-    @ship.reviewer = current_user
-    if @ship.update(ship_params)
+        @ship.reviewer = current_user
+        @ship.update(ship_params)
+      end
+    end
+    if saved
       verb = @ship.approved? ? "Approved" : "Returned"
       count = ::Certification::Ship.reviewed_today(current_user)
       notice = "#{verb} \"#{@ship.project.title}.\" That's #{count} reviewed today. Keep going!"

@@ -287,7 +287,7 @@ module Certification
     # the claim links on the project page and the shop's free-price gate, both
     # of which ask the request what it still owes.
     def unredeemed_prizes
-      return Mission::Prize.none if prizes_waived?
+      return Mission::Prize.none if prizes_waived? || !approved? || awaiting_second_stage? || !latest_for_project?
 
       super
     end
@@ -301,10 +301,13 @@ module Certification
 
     # What HCB is asked for: a T2 override wins, final_amount_cents stays T1's call.
     def payable_amount_cents
-      second_stage_review&.approved_amount_cents || final_amount_cents
+      (second_stage_review&.approved? && second_stage_review.approved_amount_cents) || final_amount_cents
     end
 
-    def payable_amount_dollars = (payable_amount_cents || 0) / 100
+    def payable_amount_dollars
+      cents = payable_amount_cents || 0
+      cents % 100 == 0 ? cents / 100 : cents / 100.0
+    end
 
     def grant_payable?
       issues_grant? && second_stage_cleared?
@@ -375,10 +378,10 @@ module Certification
         awards_kit: awards_design_kit?,
         kit_mission: kit_mission?,
         issues_grant: issues_grant?,
-        amount_dollars: final_amount_dollars,
+        amount_dollars: payable_amount_dollars,
         tier_label: tier_label,
-        reviewer_name: reviewer&.display_name,
-        feedback: feedback.to_s
+        reviewer_name: effective_reviewer&.display_name,
+        feedback: effective_feedback_review.feedback.to_s
       }
     end
 
@@ -535,27 +538,32 @@ module Certification
     # Runs the effects held back at T1, in callback order. latest_for_project? is
     # re-checked because a resubmit can supersede this while it waits for T2.
     def run_deferred_approval_effects!
-      apply_verdict_to_project!
+      issue_hcb_grant! if grant_payable? && hcb_grant_hashid.blank? && latest_for_project?
       notify_owner!
       post_verdict_to_hardware_review_channel!
       post_approval_to_hardware_feed!
-      issue_hcb_grant! if grant_payable? && hcb_grant_hashid.blank? && latest_for_project?
     end
 
     def issue_hcb_grant!
-      return if hcb_grant_hashid.present?
+      with_review_lock do
+        reload
+        return unless grant_payable? && hcb_grant_hashid.blank? && latest_for_project?
+        return if second_stage_required? && !releasing_second_stage && !second_stage_review.released?
 
-      owner = project.memberships.owner.first&.user || user
-      grant = HCBService.create_card_grant(
-        email: owner.grant_email,
-        amount_cents: payable_amount_cents,
-        # HCB caps the purpose at 30 chars, so key it off the project id (short
-        # and stable) rather than the title, which would get chopped.
-        purpose: "Hardware grant, project #{project.id}".truncate(30),
-        instructions: grant_instructions,
-        organization: HCB_GRANT_ORG
-      )
-      update_column(:hcb_grant_hashid, grant["id"])
+        owner = project.memberships.owner.first&.user || user
+        grant = HCBService.create_card_grant(
+          email: owner.grant_email,
+          amount_cents: payable_amount_cents,
+          # HCB caps the purpose at 30 chars, so key it off the project id (short
+          # and stable) rather than the title, which would get chopped.
+          purpose: "Hardware grant, project #{project.id}".truncate(30),
+          instructions: grant_instructions,
+          organization: HCB_GRANT_ORG
+        )
+        # An unrelated edit may have advanced lock_version while HCB responded.
+        # Reload under a row lock and fail loudly rather than discarding the id.
+        with_lock { update!(hcb_grant_hashid: grant.fetch("id")) }
+      end
     rescue => e
       Rails.logger.error "Failed to issue HCB grant for FundingRequest ##{id}: #{e.message}"
       raise
@@ -575,7 +583,7 @@ module Certification
     def notify_owner!
       Notifications::Hardware::FundingRequestReviewed.notify(
         recipient: owner,
-        actor: reviewer,
+        actor: effective_reviewer,
         record: self
       )
     rescue StandardError => e

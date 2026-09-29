@@ -6,7 +6,7 @@
 Your funding request was approved!
 
 <% if project && @record.issues_grant? %>
-"<%= project.title %>" is approved for $<%= @record.final_amount_dollars %> in funding<% if @actor %>, reviewed by @<%= @actor.display_name %><% end %>.
+"<%= project.title %>" is approved for $<%= @record.payable_amount_dollars %> in funding<% if @actor %>, reviewed by @<%= @actor.display_name %><% end %>.
 <% elsif project %>
 "<%= project.title %>" is approved<% if @actor %>, reviewed by @<%= @actor.display_name %><% end %>.
 <% else %>

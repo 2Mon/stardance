@@ -953,6 +953,7 @@ Rails.application.routes.draw do
         member do
           post :claim
           post :skip
+          post :retry_release
           get :devlogs
           get :files
         end

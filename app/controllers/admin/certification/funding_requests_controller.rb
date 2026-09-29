@@ -6,10 +6,15 @@ class Admin::Certification::FundingRequestsController < Admin::Certification::Ap
   before_action :set_body_class
 
   def update
-    authorize @funding_request
-    @funding_request.assign_attributes(funding_request_params)
-    attach_feedback_images
-    if @funding_request.save
+    saved = @funding_request.with_review_lock do
+      @funding_request.with_lock do
+        authorize @funding_request
+        @funding_request.assign_attributes(funding_request_params)
+        attach_feedback_images
+        @funding_request.save
+      end
+    end
+    if saved
       count = ::Certification::FundingRequest.reviewed_today(current_user)
       notice = "#{verdict_sentence} That's #{count} reviewed today. Keep going!"
       # Straight on to the next design review; `next` claims it, and falls back
@@ -41,7 +46,9 @@ class Admin::Certification::FundingRequestsController < Admin::Certification::Ap
   # a kit, and no funding at all.
   def verdict_sentence
     title = @funding_request.project.title
-    if !@funding_request.approved?
+    if @funding_request.awaiting_second_stage?
+      "Design for “#{title}” passed T1 and is awaiting T2."
+    elsif !@funding_request.approved?
       "Returned funding for “#{title}.”"
     elsif @funding_request.issues_grant?
       "Approved funding for “#{title}.”"

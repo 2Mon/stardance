@@ -5,9 +5,19 @@
 class Admin::Certification::SecondStageReviewsController < Admin::Certification::ApplicationController
   include HardwareReviewRecordings
 
-  before_action -> { head :not_found unless Flipper.enabled?(:hardware_t2_review) }
-  before_action :set_review, only: [ :show, :update, :claim, :skip, :devlogs, :files ]
+  # Existing rounds remain accessible even when enrollment is disabled.
+  before_action :set_review, only: [ :show, :update, :claim, :skip, :retry_release, :devlogs, :files ]
   before_action :set_body_class
+
+  rescue_from ActionController::ParameterMissing do
+    render plain: "This request is missing review details. Reload the review and try again.", status: :bad_request
+  end
+  rescue_from ActiveRecord::StaleObjectError do
+    render plain: "This review changed in another tab. Reload it before deciding.", status: :conflict
+  end
+  rescue_from ::Certification::SecondStageReview::ReleaseFailed do
+    redirect_to second_stage_path, alert: "The decision was saved, but release did not finish. Retry release from this review."
+  end
 
   QUEUE_PAGE_SIZE = 25
 
@@ -40,7 +50,7 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
       redirect_to queue_path_for(stage), notice: "The #{stage} T2 queue is empty." and return
     end
 
-    claimed = ::Certification::SecondStageReview.atomic_claim!(candidate.id, current_user)
+    claimed = ::Certification::SecondStageReview.available_for(current_user).atomic_claim!(candidate.id, current_user)
     if claimed
       redirect_to second_stage_path(claimed)
     else
@@ -49,10 +59,10 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
   end
 
   def claim
-    authorize @review
-
-    ::Certification::SecondStageReview.release_all_for(current_user)
-    claimed = ::Certification::SecondStageReview.atomic_claim!(@review.id, current_user)
+    claimed = with_versioned_review do
+      ::Certification::SecondStageReview.where.not(id: @review.id).release_all_for(current_user)
+      ::Certification::SecondStageReview.available_for(current_user).atomic_claim!(@review.id, current_user)
+    end
     if claimed
       redirect_to second_stage_path
     else
@@ -63,20 +73,35 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
 
   # Hides it from this reviewer for the cooldown; "next" releases the claim for others.
   def skip
-    authorize @review
-
-    ::Certification::ReviewSkip.record!(user: current_user, reviewable: @review) if @review.pending?
+    with_versioned_review do
+      ::Certification::ReviewSkip.record!(user: current_user, reviewable: @review)
+    end
     redirect_to next_admin_certification_second_stage_reviews_path(stage: @review.stage)
   end
 
   def show
     authorize @review
+    load_show_context
+  end
+
+  def retry_release
+    @review.reviewable.with_review_lock do
+      @review.reload
+      authorize @review, :show?
+      verify_version!
+      authorize @review
+      @review.release!
+    end
+    redirect_to second_stage_path, notice: "Release completed."
+  end
+
+  def load_show_context
     @reviewable = @review.reviewable
     @project = @reviewable.project
     @owner = @review.owner
     @first_stage_reviewer = @review.first_stage_reviewer
     @review_notes = @project.review_notes.includes(:author).newest_first
-    @devlog_count = @project.devlog_posts.count
+    @devlog_count = visible_devlog_posts.count
     load_undo_context
 
     @prior_reviews = (@project.certification_funding_requests.includes(:reviewer).to_a +
@@ -94,7 +119,7 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
     @project = @review.reviewable.project
     @owner = @review.owner
     @order = params[:order] == "oldest" ? "oldest" : "newest"
-    @devlog_count = @project.devlog_posts.count
+    @devlog_count = visible_devlog_posts.count
     @devlogs = ordered_devlogs
 
     @lapse_owner_uid = @owner&.hackatime_identity&.uid
@@ -128,58 +153,71 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
   end
 
   def update
-    authorize @review
-
-    verdict = params.dig(:certification_second_stage_review, :verdict).to_s
-    unless ::Certification::SecondStageReview::VERDICTS.include?(verdict)
-      redirect_to second_stage_path,
-                  alert: "Pick approve or return." and return
+    saved = with_versioned_review do
+      fields = params.require(:certification_second_stage_review)
+      verdict = fields[:verdict].to_s
+      @review.assign_attributes(feedback: fields[:feedback], internal_reason: fields[:internal_reason])
+      unless ::Certification::SecondStageReview::VERDICTS.include?(verdict)
+        @review.errors.add(:verdict, "must be approve or return")
+        next false
+      end
+      @review.verdict = verdict
+      if verdict == "approved" && @review.stage == "design" && @review.reviewable.issues_grant?
+        @review.approved_amount_dollars = fields[:approved_amount_dollars]
+      end
+      images = fields[:feedback_images]&.compact_blank
+      @review.feedback_images.attach(images) if images.present?
+      @review.save
     end
 
-    @review.assign_attributes(
-      verdict: verdict,
-      feedback: params.dig(:certification_second_stage_review, :feedback),
-      internal_reason: params.dig(:certification_second_stage_review, :internal_reason)
-    )
-
-    # Only an approval of a grant T1 already funded can change the amount.
-    if verdict == "approved" && @review.stage == "design" && @review.reviewable.issues_grant?
-      @review.approved_amount_dollars =
-        params.dig(:certification_second_stage_review, :approved_amount_dollars)
-    end
-
-    if @review.save
-      # Attached after the save, or the photos would stick to a verdict that failed.
-      images = params.dig(:certification_second_stage_review, :feedback_images)
-      @review.feedback_images.attach(images.compact_blank) if images.present?
-
+    if saved
       redirect_to queue_path_for(@review.stage), notice: verdict_notice(@review)
     else
-      redirect_to second_stage_path,
-                  alert: @review.errors.full_messages.to_sentence
+      flash.now[:alert] = @review.errors.full_messages.to_sentence
+      load_show_context
+      render :show, status: :unprocessable_entity
     end
   end
 
   private
+  private :load_show_context
 
-  # Keyed by project: at most one stage is pending at a time; fall back to the newest decided one.
+  # Never substitute a newer round for the one the reviewer actually saw.
   def set_review
-    scope = ::Certification::SecondStageReview.for_project(params[:project_id])
-    @review = scope.pending.order(created_at: :desc).first ||
-              scope.order(created_at: :desc).first
-    raise ActiveRecord::RecordNotFound if @review.nil?
+    @review = ::Certification::SecondStageReview.for_project(params[:project_id]).find(params.require(:review_id))
+  end
+
+  def verify_version!
+    version = Integer(params[:lock_version].to_s, exception: false)
+    raise ActiveRecord::StaleObjectError.new(@review, "update") unless version == @review.lock_version
+  end
+
+  def with_versioned_review
+    @review.reviewable.with_review_lock do
+      @review.reviewable.with_lock do
+        @review.reload
+        authorize @review, :show?
+        verify_version!
+        authorize @review
+        yield
+      end
+    end
+  end
+
+  def visible_devlog_posts
+    @project.devlog_posts.joins("INNER JOIN post_devlogs ON post_devlogs.id = posts.postable_id")
+      .where(post_devlogs: { deleted_at: nil })
   end
 
   def ordered_devlogs
-    scope = @project.devlogs.includes(:post, attachments_attachments: :blob).to_a
-    scope.sort_by! { |d| d.post&.created_at || d.created_at }
-    scope.reverse! if @order == "newest"
-    scope.first(DEVLOG_GALLERY_LIMIT)
+    direction = @order == "newest" ? :desc : :asc
+    visible_devlog_posts.includes(postable: { attachments_attachments: :blob })
+      .reorder(created_at: direction, id: direction).limit(DEVLOG_GALLERY_LIMIT).map(&:postable)
   end
 
   # Each devlog covers the time since the previous one (half-open, as DevlogRecordingBucketer expects).
   def devlog_windows
-    posts = @project.devlog_posts.reorder("posts.created_at ASC").to_a
+    posts = visible_devlog_posts.reorder("posts.created_at ASC, posts.id ASC").to_a
     posts.each_with_index.with_object({}) do |(post, idx), windows|
       since = idx.zero? ? @project.created_at : posts[idx - 1].created_at
       windows[post.postable_id] = { since: since.iso8601, before: post.created_at.iso8601 }
@@ -226,13 +264,28 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
 
   # Only the GitHub calls are rescued: wrapping the whole action would swallow Pundit's denial.
   def fetch_repo_files
+    @file_preview_status = :unavailable
+    @file_url = helpers.safe_external_url(@project.repo_url)
     return [ [], nil, nil ] if @project.repo_url.blank?
 
     host = ::GitHost::Base.for(@project.repo_url)
-    names = (host&.fetch_filenames || []).sort
+    unless host.is_a?(::GitHost::Github)
+      @file_preview_status = :unsupported_host
+      return [ [], nil, nil ]
+    end
+
+    names = Rails.cache.fetch([ "t2-repo-files", @project.repo_url ], expires_in: 1.minute) do
+      host.fetch_filenames
+    end.to_a.sort
     @filenames = names
     selected = params[:path].presence_in(names) || default_readme
-    [ names, selected, selected ? host&.fetch_file(selected) : nil ]
+    body = selected ? host.fetch_file(selected) : nil
+    if selected
+      path = selected.split("/").map { |segment| ERB::Util.url_encode(segment) }.join("/")
+      @file_url = "https://github.com/#{host.owner}/#{host.repo}/blob/HEAD/#{path}"
+    end
+    @file_preview_status = :text unless body.nil?
+    [ names, selected, body ]
   rescue StandardError => e
     Rails.logger.error("T2 file browser failed for project #{@project&.id}: #{e.message}")
     [ [], nil, nil ]
@@ -246,7 +299,7 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
   end
 
   def second_stage_path(review = @review)
-    admin_certification_second_stage_review_path(review.reviewable.project_id)
+    admin_certification_second_stage_review_path(review.reviewable.project_id, review_id: review.id)
   end
   helper_method :second_stage_path
 
@@ -270,11 +323,13 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
     @search = params[:search].to_s.strip
 
     scope = policy_scope(::Certification::SecondStageReview).for_stage(@stage)
+    scope = scope.current if @status == "pending"
     scope = scope.where(status: @status) unless @status == "all"
     scope = apply_search(scope)
     scope = scope.order(created_at: @sort == "newest" ? :desc : :asc)
 
-    @pagy, @reviews = pagy(scope, limit: QUEUE_PAGE_SIZE)
+    @pagy, @reviews = pagy(scope.preload(:reviewer, reviewable: { project: { memberships: :user } }), limit: QUEUE_PAGE_SIZE)
+    ActiveRecord::Associations::Preloader.new(records: @reviews.map(&:first_stage_review), associations: :reviewer).call
     @tab_counts = tab_counts
   end
 
@@ -296,7 +351,7 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
   end
 
   def tab_counts
-    scope = policy_scope(::Certification::SecondStageReview)
+    scope = policy_scope(::Certification::SecondStageReview).current
     {
       "design" => scope.design_stage.pending.count,
       "build" => scope.build_stage.pending.count
@@ -311,9 +366,15 @@ class Admin::Certification::SecondStageReviewsController < Admin::Certification:
 
   def verdict_notice(review)
     if review.approved?
-      review.stage == "design" ?
-        "Cleared. The grant is on its way and the project has moved to the build stage." :
+      if review.stage == "build"
         "Cleared. The build is certified."
+      elsif review.reviewable.awards_design_kit?
+        "Cleared. The builder can claim the kit and start building."
+      elsif review.reviewable.issues_grant?
+        "Cleared. The grant is on its way and the project has moved to the build stage."
+      else
+        "Cleared without funding. The project has moved to the build stage."
+      end
     else
       "Returned to the builder."
     end

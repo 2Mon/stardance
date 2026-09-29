@@ -76,6 +76,10 @@ module Certification
       post_ship_event || project&.last_ship_event
     end
 
+    def latest_for_project?
+      !project.ship_reviews.where("id > ?", id).exists?
+    end
+
     # misfiled: a reviewer says this belongs in the design queue and the builder
     # hasn't answered yet. withdrawn: the builder agreed, so the ship is rolled
     # back and the project returns to the design stage. Neither is a verdict, so
@@ -487,7 +491,7 @@ module Certification
 
     # Timeline cards for decided reviews sort by when the verdict landed.
     def decided_on
-      decided_at || updated_at
+      effective_decided_at || updated_at
     end
 
     # Read by Notifications::Hardware::BuildReviewed to render the Slack blocks,
@@ -503,8 +507,8 @@ module Certification
         project_title: project.title,
         project_url: routes.project_url(project, **url_opts),
         approved: approved?,
-        reviewer_name: reviewer&.display_name,
-        feedback: feedback.to_s
+        reviewer_name: effective_reviewer&.display_name,
+        feedback: effective_feedback_review.feedback.to_s
       }
     end
 
@@ -593,7 +597,6 @@ module Certification
 
     # Runs the certification cascade held back at T1, in callback order.
     def run_deferred_approval_effects!
-      apply_verdict_to_project!
       notify_owner!
       post_verdict_to_hardware_review_channel! if project&.hardware?
       post_approval_to_hardware_feed! if project&.hardware?
@@ -647,7 +650,7 @@ module Certification
     def notify_owner_of_build!
       Notifications::Hardware::BuildReviewed.notify(
         recipient: owner,
-        actor: reviewer,
+        actor: effective_reviewer,
         record: self
       )
     rescue StandardError => e

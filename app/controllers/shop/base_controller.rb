@@ -104,6 +104,7 @@ class Shop::BaseController < ApplicationController
       .includes(project: [ :memberships, { mission_attachments: :mission } ])
       .find_by(id: funding_request_id)
     return nil unless funding_request&.approved?
+    return nil unless funding_request.second_stage_cleared?
     return nil unless funding_request.owner == current_user
     # Each design kit is claimable once per approved request.
     return nil unless funding_request.redeemable_prize_for(shop_item)
